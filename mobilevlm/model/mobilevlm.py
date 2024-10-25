@@ -9,7 +9,6 @@ from mobilevlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, \
 
 
 class MobileVLMMetaModel:
-
     def __init__(self, config):
         super(MobileVLMMetaModel, self).__init__(config)
         if hasattr(config, "mm_vision_tower"):  
@@ -75,7 +74,6 @@ class MobileVLMMetaModel:
 
 
 class MobileVLMMetaForCausalLM(ABC):
-
     @abstractmethod
     def get_model(self):
         pass

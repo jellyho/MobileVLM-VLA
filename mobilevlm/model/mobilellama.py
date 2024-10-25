@@ -7,9 +7,11 @@ from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaMod
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from mobilevlm.model.mobilevlm import MobileVLMMetaModel, MobileVLMMetaForCausalLM
 
-
 class MobileVLMConfig(LlamaConfig):
     model_type = "mobilevlm"
+
+class SpatialVLAConfig(MobileVLMConfig):
+    model_type = 'spatialvla'
 
 
 class MobileLlamaModel(MobileVLMMetaModel, LlamaModel):
@@ -17,6 +19,21 @@ class MobileLlamaModel(MobileVLMMetaModel, LlamaModel):
 
     def __init__(self, config: LlamaConfig):
         super(MobileLlamaModel, self).__init__(config)
+
+class SpatialVLAModel(MobileVLMMetaModel, LlamaModel):
+    config_class = SpatialVLAConfig
+
+    def __init__(self, config: LlamaConfig):
+        super(SpatialVLAModel, self).__init__(config)
+
+class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
+    config_class = SpatialVLAConfig
+
+    def __init__(self, config):
+        super(LlamaForCausalLM, self).__init__(config)
+        self.model = MobileLlamaModel(config)
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.post_init()  # Initialize weights and apply final processing
 
 
 class MobileLlamaForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
