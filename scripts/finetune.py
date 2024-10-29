@@ -145,7 +145,7 @@ if distributed_state.is_main_process:
     wandb.init(
         entity=training_args.wandb_entity,
         project=training_args.wandb_project,
-        name=f"{dataset_kwargs.name}_chunk{model_args.action_len}"
+        name=f"{dataset_kwargs['name']}_chunk{model_args.action_len}"
     )
 
 
@@ -165,7 +165,7 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
         normalized_loss.backward()
 
         # Compute gradient step index
-        gradient_step_idx = batch_idx // cfg.grad_accumulation_steps
+        gradient_step_idx = batch_idx // training_args.gradient_accumulation_steps
 
         # Update
         if (batch_idx + 1) % training_args.gradient_accumulation_steps == 0:

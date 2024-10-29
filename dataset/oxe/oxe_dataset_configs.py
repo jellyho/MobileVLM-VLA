@@ -40,16 +40,14 @@ class ActionEncoding(IntEnum):
 
 OXE_DATASET_CONFIGS = {
     "lg_transfer_wet_tissue_v1": { # I guess we are not using proprio?
-        "image_obs_keys": {
-            "primary": "image",
-            "high": None,
-            "nav": None,
-            "left_wrist": None,
-            "right_wrist": None,
-        },
+        "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
-        "proprio_obs_keys": {"bimanual": None, "quadruped": None},
-        "proprio_obs_dims": {"bimanual": 14, "quadruped": 46},
+        "proprio_encoding": ProprioEncoding.JOINT_BIMANUAL,
+        "action_encoding": ActionEncoding.JOINT_POS_BIMANUAL,
+    },
+    "lg_cup_color_rightarm": { # I guess we are not using proprio?
+        "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
         "proprio_encoding": ProprioEncoding.JOINT_BIMANUAL,
         "action_encoding": ActionEncoding.JOINT_POS_BIMANUAL,
     },

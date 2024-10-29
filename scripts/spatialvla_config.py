@@ -7,15 +7,15 @@ from dataset.spec import ModuleSpec
 
 ## Dataset arguments#####
 dataset_kwargs = dict(
-    name= "lg_transfer_wet_tissue_v1",
+    name= "lg_cup_color_rightarm",
     data_dir= "/home/jellyho/tensorflow_datasets",
     image_obs_keys= {"primary": "image"},
     proprio_obs_key= None,
     language_key= "language_instruction",
     action_proprio_normalization_type= "normal",
-    action_normalization_mask= [True, True, True, True, True, True, False, True, True, True, True, True, True, False],
+    action_normalization_mask= [True, True, True, True, True, True, False],
     standardize_fn= ModuleSpec.create(
-        "dataset.oxe.oxe_standardization_transforms:lg_dataset_transform",
+        "dataset.oxe.oxe_standardization_transforms:lg_dataset_transform_single_arm_delta_ee",
     ),
 )
 traj_transform_kwargs = dict(

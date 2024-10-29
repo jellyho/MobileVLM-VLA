@@ -23,7 +23,7 @@ from dataset.utils.data_utils import (
     relabel_actions,
 )
 
-def lg_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+def lg_dataset_transform_bimanual_joint_pos(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     trajectory["action"] = tf.cast(trajectory["action"]["joint_pos"], tf.float32)
     trajectory["action"] = tf.concat(
         [
@@ -34,8 +34,17 @@ def lg_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
         ],
         axis=1,
     )
-    # trajectory = relabel_actions(trajectory)
-    # trajectory["observation"]["proprio"] = trajectory["observation"]["state"]
+    return trajectory
+
+def lg_dataset_transform_single_arm_delta_ee(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    trajectory["action"] = tf.cast(trajectory["action"]["delta_ee"], tf.float32)
+    trajectory["action"] = tf.concat(
+        [
+            trajectory["action"][:, :6],
+            binarize_gripper_actions(trajectory["action"][:, 6])[:, None],
+        ],
+        axis=1,
+    )
     return trajectory
 
 def bridge_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
@@ -983,7 +992,8 @@ def mujoco_manip_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]
 
 
 OXE_STANDARDIZATION_TRANSFORMS = {
-    'lg_transfer_wet_tissue_v1': lg_dataset_transform,
+    'lg_cup_color_rightarm': lg_dataset_transform_single_arm_delta_ee,
+    'lg_transfer_wet_tissue_v1': lg_dataset_transform_bimanual_joint_pos,
     "bridge_dataset": bridge_dataset_transform,
     "fractal20220817_data": rt1_dataset_transform,
     "kuka": kuka_dataset_transform,
