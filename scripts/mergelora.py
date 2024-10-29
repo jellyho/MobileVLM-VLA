@@ -5,7 +5,7 @@ from pathlib import Path
 from peft import PeftModel
 from transformers import AutoTokenizer, AutoConfig, BitsAndBytesConfig
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
-from mobilevlm.model.mobilellama import MobileLlamaForCausalLM
+from mobilevlm.model.mobilellama import MobileLlamaForCausalLM, SpatialVLAForCausalLM
 from mobilevlm.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
@@ -16,7 +16,7 @@ def merge_lora(model_base, model_path, save_path):
     lora_cfg_pretrained = AutoConfig.from_pretrained(model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
     # Loading weight from base model
-    model = MobileLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
+    model = SpatialVLAForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
     print("🔜 Don't worry, we will load vision-tower weight soon later...")
     token_num, tokem_dim = model.lm_head.out_features, model.lm_head.in_features
     if model.lm_head.weight.shape[0] != token_num:
@@ -48,4 +48,4 @@ def merge_lora(model_base, model_path, save_path):
     model.save_pretrained(save_path)
     tokenizer.save_pretrained(save_path)
 
-merge_lora(sys.argv[1], sys.argv[2], sys.argv[3])
+# merge_lora(sys.argv[1], sys.argv[2], sys.argv[3])

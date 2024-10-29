@@ -6,31 +6,36 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
 
-from mobilevlm.model.mobilevlm import load_pretrained_model
+from mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla
 from mobilevlm.conversation import conv_templates, SeparatorStyle
 from mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
 from mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
 
-class VLMModel:
+class VLAModel:
     def __init__(self, args):
         disable_torch_init()
         self.args = args
         self.model_name = args.model_path.split('/')[-1]
-        self.tokenizer, self.model, self.image_processor, self.context_len = load_pretrained_model(args.model_path, args.load_8bit, args.load_4bit)
+        self.tokenizer, self.model, self.image_processor, self.context_len = load_pretrained_vlm_for_vla(
+            model_path=args.model_path,
+            load_8bit=args.load_8bit,
+            load_4bit=args.load_4bit,
+            action_dim=args.action_dim,
+            action_len=args.action_len,
+            action_hidden_size=args.action_hidden_size
+        )
 
-    def inference(self, image, prompt):
+    def inference_prompt(self, image, prompt):
         images = [image]
         images_tensor = process_images(images, self.image_processor, self.model.config).to(self.model.device, dtype=torch.float16)
         conv = conv_templates[self.args.conv_mode].copy()
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
-        # print(prompt)
         stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
         # Input
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
         stopping_criteria = KeywordsStoppingCriteria([stop_str], self.tokenizer, input_ids)
-        
         with torch.inference_mode():
             output_ids = self.model.generate(
                 input_ids,
@@ -54,6 +59,24 @@ class VLMModel:
             outputs = outputs[: -len(stop_str)]
         return f"{outputs.strip()}"
 
+    def inference_action(self, image, prompt):
+        images = [image]
+        images_tensor = process_images(images, self.image_processor, self.model.config).to(self.model.device, dtype=torch.float16)
+        conv = conv_templates[self.args.conv_mode].copy()
+        conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
+        conv.append_message(conv.roles[1], None)
+        prompt = conv.get_prompt()
+        stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
+        # Input
+        input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
+        with torch.inference_mode():
+            action = self.model.forward(
+                input_ids=input_ids,
+                images=images_tensor,
+                use_cache=True,
+            )
+        return action
+
 def inference_once(args):
     disable_torch_init()
     model_name = args.model_path.split('/')[-1]
@@ -61,7 +84,7 @@ def inference_once(args):
 
     images = [Image.open(args.image_file).convert("RGB")]
     images_tensor = process_images(images, image_processor, model.config).to(model.device, dtype=torch.float16)
-
+    print(images_tensor.shape)
     conv = conv_templates[args.conv_mode].copy()
     conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + args.prompt)
     conv.append_message(conv.roles[1], None)

@@ -121,6 +121,11 @@ def get_peft_state_maybe_zero_3(named_params, bias):
                 to_return[bias_name] = t
     else:
         raise NotImplementedError
+
+    # # Action Head
+    # for k, t in named_params:
+    #     if 'action' in k:
+    #         to_return[k] = t
     to_return = {k: maybe_zero_3(v, ignore_status=True) for k, v in to_return.items()}
     return to_return
 
@@ -154,6 +159,10 @@ def find_all_linear_names(model):
 
     if 'lm_head' in lora_module_names: # needed for 16-bit
         lora_module_names.remove('lm_head')
+    if 'action_head' in lora_module_names: # needed for 16-bit
+        lora_module_names.remove('action_head')
+    if 'action_hidden' in lora_module_names: # needed for 16-bit
+        lora_module_names.remove('action_hidden')
     return list(lora_module_names)
 
 

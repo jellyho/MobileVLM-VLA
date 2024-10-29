@@ -9,10 +9,15 @@ from mobilevlm.model.mobilevlm import MobileVLMMetaModel, MobileVLMMetaForCausal
 
 class MobileVLMConfig(LlamaConfig):
     model_type = "mobilevlm"
+    
 
 class SpatialVLAConfig(MobileVLMConfig):
     model_type = 'spatialvla'
-
+    def __init__(self, action_dim, action_len, action_hidden_size, **kwargs):
+        super().__init__(**kwargs)
+        self.action_dim = None
+        self.action_len = None
+        self.action_hidden_size = None
 
 class MobileLlamaModel(MobileVLMMetaModel, LlamaModel):
     config_class = MobileVLMConfig
@@ -31,11 +36,59 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
 
     def __init__(self, config):
         super(LlamaForCausalLM, self).__init__(config)
-        self.model = MobileLlamaModel(config)
+
+        self.model = SpatialVLAModel(config)
+        # For compatibility, lm_head is only used for token embedding resizing
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        # NLP Head Version
+        self.action_hidden = nn.Linear(config.hidden_size, config.action_hidden_size, bias=False)
+        self.action_head = nn.Linear(config.action_hidden_size, config.action_dim * config.action_len, bias=False)
+        self.relu = nn.ReLU()
+        # self.tanh = nn.Tanh()
         self.post_init()  # Initialize weights and apply final processing
+    
+    def get_model(self):
+        return self.model
 
+    def forward(self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = False,
+        output_hidden_states: Optional[bool] = False,
+        images: Optional[torch.FloatTensor] = None,
+        return_dict: Optional[bool] = True,
+    ):
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states)
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict 
 
+        # [batch, input_ids] this may have 
+
+        input_ids, attention_mask, past_key_values, inputs_embeds, labels = \
+            self.prepare_inputs_labels_for_multimodal(input_ids, attention_mask, past_key_values, labels, images)
+
+        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict
+        )
+
+        hidden_states = outputs[0] # [batch, length, dim]
+        action_hidden = self.relu(self.action_hidden(hidden_states[:, -1]))
+        action = self.action_head(action_hidden)
+        action = action.reshape(-1, self.config.action_len, self.config.action_dim)
+        return action
+        
 class MobileLlamaForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
     config_class = MobileVLMConfig
 
@@ -132,3 +185,6 @@ class MobileLlamaForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
 
 AutoConfig.register("mobilevlm", MobileVLMConfig)
 AutoModelForCausalLM.register(MobileVLMConfig, MobileLlamaForCausalLM)
+
+AutoConfig.register("spatialvla", SpatialVLAConfig)
+AutoModelForCausalLM.register(SpatialVLAConfig, SpatialVLAForCausalLM)

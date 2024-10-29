@@ -90,7 +90,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
+SpatialVLA*/
 # Spyder project settings
 .spyderproject
 .spyproject

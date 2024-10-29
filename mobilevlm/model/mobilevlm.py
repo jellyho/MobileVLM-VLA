@@ -250,12 +250,9 @@ class MobileVLMMetaForCausalLM(ABC):
                     p.requires_grad = False
 
 
-def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda"):
-
-    from mobilevlm.model.mobilellama import MobileLlamaForCausalLM
-
+def load_pretrained_vlm_for_vla(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", action_len=1, action_dim=7, action_hidden_size=256):
+    from mobilevlm.model.mobilellama import MobileLlamaForCausalLM, SpatialVLAForCausalLM, MobileVLMConfig, SpatialVLAConfig
     kwargs = {"device_map": device_map}
-
     if load_8bit:
         kwargs['load_in_8bit'] = True
     elif load_4bit:
@@ -269,8 +266,14 @@ def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_m
     else:
         kwargs['torch_dtype'] = torch.float16
 
+
+    # Init models
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-    model = MobileLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
+    config = MobileVLMConfig.from_pretrained(model_path)
+    config.action_dim = action_dim
+    config.action_len = action_len
+    config.action_hidden_size = action_hidden_size
+    model = SpatialVLAForCausalLM.from_pretrained(model_path, config=config, low_cpu_mem_usage=True, **kwargs)
 
     mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
     mm_use_im_patch_token = getattr(model.config, "mm_use_im_patch_token", True)
