@@ -640,8 +640,8 @@ class RLDSBatchTransform:
         ### Converstaion add needed!
         conv = conv_templates['v1'].copy()
         lang = rlds_batch["task"]["language_instruction"].decode().lower()
-        # prompt = f'What action should the robot take to {lang}?'
-        prompt = 'what objects can you see?'
+        prompt = f'What action should the robot take to {lang}?'
+        # prompt = 'what objects can you see?'
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
@@ -713,6 +713,6 @@ def json_to_numpy_compatible(data):
 
 def load_statistics_from_json(filename):
     """Loads a dictionary from a JSON file, converting lists to numpy arrays."""
-    with open(filename, "r") as f:
+    with open(f'{filename}/dataset_statistics.json', "r") as f:
         data = json.load(f)
     return json_to_numpy_compatible(data)

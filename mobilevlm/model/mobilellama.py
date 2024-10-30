@@ -13,11 +13,13 @@ class MobileVLMConfig(LlamaConfig):
 
 class SpatialVLAConfig(MobileVLMConfig):
     model_type = 'spatialvla'
-    def __init__(self, action_dim, action_len, action_hidden_size, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, **kwargs):
         self.action_dim = None
         self.action_len = None
         self.action_hidden_size = None
+        self.action_layernorm = False
+        super().__init__(**kwargs)
+
 
 class MobileLlamaModel(MobileVLMMetaModel, LlamaModel):
     config_class = MobileVLMConfig
@@ -43,6 +45,11 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         # NLP Head Version
         self.action_hidden = nn.Linear(config.hidden_size, config.action_hidden_size, bias=False)
         self.action_head = nn.Linear(config.action_hidden_size, config.action_dim * config.action_len, bias=False)
+        if config.action_layernorm:
+            self.action_layernorm = nn.LayerNorm(config.hidden_size)
+            self.ln = True
+        else:
+            self.ln = False
         self.relu = nn.ReLU()
         # self.tanh = nn.Tanh()
         self.post_init()  # Initialize weights and apply final processing
@@ -83,8 +90,11 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             return_dict=return_dict
         )
 
-        hidden_states = outputs[0] # [batch, length, dim]
-        action_hidden = self.relu(self.action_hidden(hidden_states[:, -1]))
+        action_hidden = outputs[0][:, -1] # [batch, dim]
+        if self.ln:
+            action_hidden = self.action_layernorm(action_hidden)
+        action_hidden = self.action_hidden(action_hidden)
+        action_hidden = self.relu(action_hidden)
         action = self.action_head(action_hidden)
         action = action.reshape(-1, self.config.action_len, self.config.action_dim)
         return action

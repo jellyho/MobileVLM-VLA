@@ -6,28 +6,27 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
 
-from mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla
+from mobilevlm.model.mobilevlm import load_vla
 from mobilevlm.conversation import conv_templates, SeparatorStyle
 from mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
 from mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
+from dataset.dataset import load_statistics_from_json
 
 class VLAModel:
-    def __init__(self, args):
+    def __init__(self, model_path):
         disable_torch_init()
-        self.args = args
-        self.model_name = args.model_path.split('/')[-1]
-        self.tokenizer, self.model, self.image_processor, self.context_len = load_pretrained_vlm_for_vla(
-            model_path=args.model_path,
-            load_8bit=args.load_8bit,
-            load_4bit=args.load_4bit,
-            action_dim=args.action_dim,
-            action_len=args.action_len,
-            action_hidden_size=args.action_hidden_size
-        )
+        self.tokenizer, self.model, self.image_processor = load_vla(model_path=model_path)
+        self.dataset_statistics = load_statistics_from_json(model_path)
+
+    def unnorm_action(self, action):
+        action = action * self.dataset_statistics['action']['std'] + self.dataset_statistics['action']['mean']
+        return action
 
     def inference_prompt(self, image, prompt):
         images = [image]
         images_tensor = process_images(images, self.image_processor, self.model.config).to(self.model.device, dtype=torch.float16)
+        # prompt = f'What action should the robot take to {lang}?'
+        prompt = 'what objects can you see?'
         conv = conv_templates[self.args.conv_mode].copy()
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
@@ -62,11 +61,13 @@ class VLAModel:
     def inference_action(self, image, prompt):
         images = [image]
         images_tensor = process_images(images, self.image_processor, self.model.config).to(self.model.device, dtype=torch.float16)
-        conv = conv_templates[self.args.conv_mode].copy()
+        # prompt = f'What action should the robot take to {lang}?'
+        prompt = 'what objects can you see?'
+
+        conv = conv_templates['v1'].copy()
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
-        stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
         # Input
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
         with torch.inference_mode():
@@ -75,6 +76,8 @@ class VLAModel:
                 images=images_tensor,
                 use_cache=True,
             )
+        action = action.cpu().numpy()[0]
+        action = self.unnorm_action(action)
         return action
 
 def inference_once(args):

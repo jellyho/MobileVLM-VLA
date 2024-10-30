@@ -17,6 +17,7 @@ from typing import Dict, Optional, Sequence, List
 from torch.nn import MSELoss
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
+from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 from dataset.dataset import RLDSDataset, save_statistics_to_json
 from mobilevlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
@@ -56,9 +57,12 @@ tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
     device='cuda',
     action_len=model_args.action_len,
     action_dim=model_args.action_dim,
-    action_hidden_size=model_args.action_hidden_size
+    action_hidden_size=model_args.action_hidden_size,
+    action_layernorm=model_args.action_layernorm
 )
+
 model.config.use_cache = False
+model = model.to(device_id)
 print('Pretrained VLM Loaded')
 
 dataset = RLDSDataset(
@@ -77,6 +81,8 @@ dataloader = DataLoader(
     num_workers=0,  # Important =>> Set to 0 if using RLDS; TFDS rolls its own parallelism!
 )
 # Save statistics to a JSON file
+if not os.path.exists(training_args.output_dir):
+    os.makedirs(training_args.output_dir)
 save_statistics_to_json(dataset.dataset.dataset_statistics, f"{training_args.output_dir}/dataset_statistics.json")
 print('Dataset Loaded')
 
@@ -136,6 +142,8 @@ if training_args.bits in [4, 8]:
 model.print_trainable_parameters()
 print('LoRA Loaded')
 
+model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
+
 trainable_params = [param for param in model.parameters() if param.requires_grad]
 optimizer = AdamW(trainable_params, lr=training_args.learning_rate)
 loss_fn = MSELoss()
@@ -150,6 +158,7 @@ if distributed_state.is_main_process:
 
 
 ## Training LOOP!
+print(training_args)
 print('Training Start')
 with tqdm(total=training_args.max_steps, leave=False) as progress:
     model.train()
@@ -186,23 +195,22 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
         if gradient_step_idx > 0 and gradient_step_idx % training_args.save_steps == 0:
             if distributed_state.is_main_process:
                 print(f"Saving Model Checkpoint for Step {gradient_step_idx}")
-            dist.barrier()
 
-            model.config.save_pretrained(training_args.temp_dir)
-            state_dict = get_peft_state_maybe_zero_3(model.named_parameters(), training_args.lora_bias)
-            non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.named_parameters())
-            model.save_pretrained(training_args.temp_dir, state_dict=state_dict)
-            torch.save(non_lora_state_dict, os.path.join(training_args.temp_dir, 'non_lora_trainables.bin'))
+                dist.barrier()
 
-            # Merge lora model into output dir
-            merge_lora(model_args.model_path, training_args.temp_dir, training_args.output_dir)
-            dist.barrier()
+                model.module.config.save_pretrained(training_args.temp_dir)
+                state_dict = get_peft_state_maybe_zero_3(model.module.named_parameters(), training_args.lora_bias)
+                non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.module.named_parameters())
+                model.module.save_pretrained(training_args.temp_dir, state_dict=state_dict)
+                torch.save(non_lora_state_dict, os.path.join(training_args.temp_dir, 'non_lora_trainables.bin'))
+
+                # Merge lora model into output dir
+                merge_lora(model_args.model_path, training_args.temp_dir, training_args.output_dir)
+                dist.barrier()
 
         if gradient_step_idx == training_args.max_steps:
             print(f"Max step {training_args.max_steps} reached! Stopping training...")
-
-
-            
+           
 
 # Save configs and state_dicts into temp dir
 model.config.save_pretrained(training_args.temp_dir)

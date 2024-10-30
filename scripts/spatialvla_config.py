@@ -73,13 +73,14 @@ class ModelArguments:
     action_dim: int = field(default=14)
     action_len: int = field(default=1)
     action_hidden_size: int = field(default=256)
+    action_layernorm: bool = field(default=False)
     freeze_backbone: bool = False
     tune_mm_mlp_adapter: bool = False
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
-    temp_dir: str = field(default='SpatialVLA_tmp')
-    output_dir: str = field(default='SpatialVLA')
+    temp_dir: str = field(default='SpatialVLA_tmp_highlr')
+    output_dir: str = field(default='SpatialVLA_highlr')
     double_quant: bool = field(
         default=True,
         metadata={"help": "Compress the quantization statistics through double quantization."}
@@ -103,9 +104,9 @@ class TrainingArguments(transformers.TrainingArguments):
     batch_size = 32
     shuffle_buffer_size = 10000
     max_steps = 50000
-    save_steps = 1000
+    save_steps = 500
     seed = 42
     wandb_project = 'SpatialVLA'
     wandb_entity = 'jellyho_'
-    learning_rate = 0.001
+    learning_rate = 1e-4
     gradient_accumulation_steps = 1

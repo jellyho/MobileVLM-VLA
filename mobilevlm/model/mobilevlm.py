@@ -250,7 +250,7 @@ class MobileVLMMetaForCausalLM(ABC):
                     p.requires_grad = False
 
 
-def load_pretrained_vlm_for_vla(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", action_len=1, action_dim=7, action_hidden_size=256):
+def load_pretrained_vlm_for_vla(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", action_len=1, action_dim=7, action_hidden_size=256, action_layernorm=False):
     from mobilevlm.model.mobilellama import MobileLlamaForCausalLM, SpatialVLAForCausalLM, MobileVLMConfig, SpatialVLAConfig
     kwargs = {"device_map": device_map}
     if load_8bit:
@@ -273,6 +273,7 @@ def load_pretrained_vlm_for_vla(model_path, load_8bit=False, load_4bit=False, de
     config.action_dim = action_dim
     config.action_len = action_len
     config.action_hidden_size = action_hidden_size
+    config.action_layernorm = action_layernorm
     model = SpatialVLAForCausalLM.from_pretrained(model_path, config=config, low_cpu_mem_usage=True, **kwargs)
 
     mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
@@ -297,3 +298,42 @@ def load_pretrained_vlm_for_vla(model_path, load_8bit=False, load_4bit=False, de
         context_len = 2048
     
     return tokenizer, model, image_processor, context_len
+
+def load_vla(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda"):
+    from mobilevlm.model.mobilellama import MobileLlamaForCausalLM, SpatialVLAForCausalLM, MobileVLMConfig, SpatialVLAConfig
+
+    kwargs = {"device_map": device_map}
+    if load_8bit:
+        kwargs['load_in_8bit'] = True
+    elif load_4bit:
+        kwargs['load_in_4bit'] = True
+        kwargs['quantization_config'] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type='nf4'
+        )
+    else:
+        kwargs['torch_dtype'] = torch.float16
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
+    config = SpatialVLAConfig.from_pretrained(model_path)
+    model = SpatialVLAForCausalLM.from_pretrained(model_path, config=config, low_cpu_mem_usage=True, **kwargs)
+
+    mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
+    mm_use_im_patch_token = getattr(model.config, "mm_use_im_patch_token", True)
+    if mm_use_im_patch_token:
+        tokenizer.add_tokens([DEFAULT_IMAGE_PATCH_TOKEN], special_tokens=True)
+    if mm_use_im_start_end:
+        tokenizer.add_tokens([DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN], special_tokens=True)
+    model.resize_token_embeddings(len(tokenizer))
+
+    vision_tower = model.get_vision_tower()
+    if 'v2' in getattr(model.config, "mm_projector_type", "ldpnet"):
+        vision_tower.load_image_processor()
+    elif not vision_tower.is_loaded:
+        vision_tower.load_model()
+    vision_tower.to(device=device, dtype=torch.float16)
+    image_processor = vision_tower.image_processor
+
+    return tokenizer, model, image_processor
