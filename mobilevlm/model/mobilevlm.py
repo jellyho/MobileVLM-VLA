@@ -274,6 +274,7 @@ def load_pretrained_vlm_for_vla(model_path, load_8bit=False, load_4bit=False, de
     config.action_len = action_len
     config.action_hidden_size = action_hidden_size
     config.action_layernorm = action_layernorm
+    config.model_type='spatialvla'
     model = SpatialVLAForCausalLM.from_pretrained(model_path, config=config, low_cpu_mem_usage=True, **kwargs)
 
     mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
@@ -317,8 +318,8 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device_map="auto", de
         kwargs['torch_dtype'] = torch.float16
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-    config = SpatialVLAConfig.from_pretrained(model_path)
-    model = SpatialVLAForCausalLM.from_pretrained(model_path, config=config, low_cpu_mem_usage=True, **kwargs)
+    # config = SpatialVLAConfig.from_pretrained(model_path)
+    model = SpatialVLAForCausalLM.from_pretrained(model_path)
 
     mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
     mm_use_im_patch_token = getattr(model.config, "mm_use_im_patch_token", True)
