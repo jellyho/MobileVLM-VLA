@@ -7,7 +7,7 @@ from dataset.spec import ModuleSpec
 
 ## Dataset arguments#####
 dataset_kwargs = dict(
-    name= "lg_cup_color_rightarm",
+    name= "lg_stack_cup_5hz",
     data_dir= "/home/jellyho/tensorflow_datasets",
     image_obs_keys= {"primary": "image"},
     proprio_obs_key= None,
@@ -57,7 +57,7 @@ wrist_augment_kwargs = dict(
 )
 frame_transform_kwargs = dict(
     resize_size={
-        "primary": (256, 256),  # workspace (3rd person) camera is at 256x256
+        "primary": (336, 336),  # workspace (3rd person) camera is at 256x256
     },
     image_augment_kwargs=dict(
         primary=workspace_augment_kwargs,
@@ -72,10 +72,8 @@ class ModelArguments:
     model_path: Optional[str] = field(default="remyxai/SpaceLLaVA-lite")
     action_dim: int = field(default=14)
     action_len: int = field(default=1)
-    action_hidden_size: int = field(default=256)
-    action_layernorm: bool = field(default=False)
-    freeze_backbone: bool = False
-    tune_mm_mlp_adapter: bool = False
+    action_hidden_sizes: List[int] = field(default_factory=lambda: [256])
+    hidden_projection: str = field(default='mean')
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -103,8 +101,8 @@ class TrainingArguments(transformers.TrainingArguments):
     group_by_modality_length: bool = field(default=False)
     batch_size = 32
     shuffle_buffer_size = 10000
-    max_steps = 50000
-    save_steps = 500
+    max_steps: int = field(default=50000)
+    save_steps: int = field(default=500)
     seed = 42
     wandb_project = 'SpatialVLA'
     wandb_entity = 'jellyho_'

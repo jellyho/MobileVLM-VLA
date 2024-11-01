@@ -993,6 +993,7 @@ def mujoco_manip_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]
 
 OXE_STANDARDIZATION_TRANSFORMS = {
     'lg_cup_color_rightarm': lg_dataset_transform_single_arm_delta_ee,
+    'lg_stack_cup_5hz': lg_dataset_transform_single_arm_delta_ee,
     'lg_transfer_wet_tissue_v1': lg_dataset_transform_bimanual_joint_pos,
     "bridge_dataset": bridge_dataset_transform,
     "fractal20220817_data": rt1_dataset_transform,

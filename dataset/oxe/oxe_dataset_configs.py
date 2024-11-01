@@ -48,8 +48,14 @@ OXE_DATASET_CONFIGS = {
     "lg_cup_color_rightarm": { # I guess we are not using proprio?
         "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
-        "proprio_encoding": ProprioEncoding.JOINT_BIMANUAL,
-        "action_encoding": ActionEncoding.JOINT_POS_BIMANUAL,
+        "proprio_encoding": ProprioEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
+    },
+    "lg_stack_cup_5hz": { # I guess we are not using proprio?
+        "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "proprio_encoding": ProprioEncoding.POS_EULER,
+        "action_encoding": ActionEncoding.EEF_POS,
     },
     "fractal20220817_data": {
         "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},

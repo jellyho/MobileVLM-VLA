@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
 
-from mobilevlm.model.mobilevlm import load_vla
+from mobilevlm.model.mobilevlm import load_vla, load_pretrained_model
 from mobilevlm.conversation import conv_templates, SeparatorStyle
 from mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
 from mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
@@ -61,8 +61,8 @@ class VLAModel:
     def inference_action(self, image, prompt):
         images = [image]
         images_tensor = process_images(images, self.image_processor, self.model.config).to(self.model.device, dtype=torch.float16)
-        # prompt = f'What action should the robot take to {lang}?'
-        prompt = 'what objects can you see?'
+        prompt = f'What action should the robot take to {prompt}?'
+        # prompt = 'what objects can you see?'
 
         conv = conv_templates['v1'].copy()
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
@@ -118,8 +118,6 @@ def inference_once(args):
     outputs = outputs.strip()
     if outputs.endswith(stop_str):
         outputs = outputs[: -len(stop_str)]
-    print(f"🚀 {model_name}: {outputs.strip()}\n")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

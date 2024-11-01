@@ -6,6 +6,7 @@ from torch.nn import CrossEntropyLoss
 from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaModel, LlamaForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from mobilevlm.model.mobilevlm import MobileVLMMetaModel, MobileVLMMetaForCausalLM
+from mobilevlm.model.action_heads import MLPHead
 
 class MobileVLMConfig(LlamaConfig):
     model_type = "mobilevlm"
@@ -16,8 +17,8 @@ class SpatialVLAConfig(MobileVLMConfig):
     def __init__(self, **kwargs):
         self.action_dim = None
         self.action_len = None
-        self.action_hidden_size = None
-        self.action_layernorm = False
+        self.action_hidden_sizes = None
+        self.hidden_projection = 'last'
         super().__init__(**kwargs)
 
 
@@ -42,16 +43,10 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         self.model = SpatialVLAModel(config)
         # For compatibility, lm_head is only used for token embedding resizing
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
         # NLP Head Version
-        self.action_hidden = nn.Linear(config.hidden_size, config.action_hidden_size, bias=False)
-        self.action_head = nn.Linear(config.action_hidden_size, config.action_dim * config.action_len, bias=False)
-        if config.action_layernorm:
-            self.action_layernorm = nn.LayerNorm(config.hidden_size)
-            self.ln = True
-        else:
-            self.ln = False
-        self.relu = nn.ReLU()
-        # self.tanh = nn.Tanh()
+        self.action_head = MLPHead(config.hidden_size, config.action_hidden_sizes, config.action_dim * config.action_len)
+        self.config = config
         self.post_init()  # Initialize weights and apply final processing
     
     def get_model(self):
@@ -90,11 +85,11 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             return_dict=return_dict
         )
 
-        action_hidden = outputs[0][:, -1] # [batch, dim]
-        if self.ln:
-            action_hidden = self.action_layernorm(action_hidden)
-        action_hidden = self.action_hidden(action_hidden)
-        action_hidden = self.relu(action_hidden)
+        hidden = outputs[0]
+        if self.config.hidden_projection == 'last':
+            action_hidden = hidden[:, -1] # [batch, dim]
+        elif self.config.hidden_projection == 'mean':
+            action_hidden = torch.mean(hidden, axis=1)
         action = self.action_head(action_hidden)
         action = action.reshape(-1, self.config.action_len, self.config.action_dim)
         return action
@@ -131,6 +126,8 @@ class MobileLlamaForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         input_ids, attention_mask, past_key_values, inputs_embeds, labels = \
             self.prepare_inputs_labels_for_multimodal(input_ids, attention_mask, past_key_values, labels, images)
 
+        print(attention_mask)
+        # attention_mask = None
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.model(
             input_ids=input_ids,

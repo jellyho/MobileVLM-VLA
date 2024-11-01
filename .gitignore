@@ -69,7 +69,7 @@ docs/zh_cn/_build/
 
 # PyBuilder
 target/
-
+checkpoints/
 # Jupyter Notebook
 .ipynb_checkpoints
 
