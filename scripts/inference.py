@@ -19,7 +19,8 @@ class VLAModel:
         self.dataset_statistics = load_statistics_from_json(model_path)
 
     def unnorm_action(self, action):
-        action = action * self.dataset_statistics['action']['std'] + self.dataset_statistics['action']['mean']
+        mask = self.dataset_statistics['action']['mask']
+        action = action * (self.dataset_statistics['action']['std'] * mask) + (self.dataset_statistics['action']['mean'] * mask)
         return action
 
     def inference_prompt(self, image, prompt):

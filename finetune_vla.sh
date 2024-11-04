@@ -8,3 +8,4 @@ torchrun --standalone --nnodes 1 --nproc-per-node 1 scripts/finetune.py \
     --hidden_projection "mean" \
     --temp_dir "v1_tmp" \
     --output_dir "v1" \
+    --max_steps 200000
