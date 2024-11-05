@@ -6,6 +6,7 @@ from spatialvla.mobilevlm.model.vision_encoder import build_vision_tower
 from spatialvla.mobilevlm.model.vision_projector import build_vision_projector
 from spatialvla.mobilevlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, \
     DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from spatialvla.datasets.rlds.utils.data_utils import load_statistics_from_json
 
 
 class MobileVLMMetaModel:
@@ -385,4 +386,6 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device_map="auto", de
 
     image_processor = vision_tower.image_processor
 
-    return tokenizer, model, image_processor
+    dataset_statistics = load_statistics_from_json(model_path)
+
+    return tokenizer, model, image_processor, dataset_statistics

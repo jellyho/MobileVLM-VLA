@@ -288,6 +288,22 @@ def save_dataset_statistics(dataset_statistics, run_dir):
     print(f"Saved dataset statistics file at path {out_path}")
 
 
+def json_to_numpy_compatible(data):
+    """Converts lists back to numpy arrays in the loaded JSON data."""
+    if isinstance(data, dict):
+        return {k: json_to_numpy_compatible(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return np.array(data)  # Convert lists back to numpy arrays
+    else:
+        return data
+
+def load_statistics_from_json(foldername):
+    """Loads a dictionary from a JSON file, converting lists to numpy arrays."""
+    with open(f'{foldername}/dataset_statistics.json', "r") as f:
+        data = json.load(f)
+    return json_to_numpy_compatible(data)
+
+
 def allocate_threads(n: Optional[int], weights: np.ndarray):
     """
     Allocates an integer number of threads across datasets based on weights.

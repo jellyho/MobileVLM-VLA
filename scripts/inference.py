@@ -10,24 +10,28 @@ from spatialvla.mobilevlm.model.mobilevlm import load_vla, load_pretrained_model
 from spatialvla.mobilevlm.conversation import conv_templates, SeparatorStyle
 from spatialvla.mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
 from spatialvla.mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
-from spatialvla.dataset.dataset import load_statistics_from_json
+
 
 class VLAModel:
     def __init__(self, model_path):
         disable_torch_init()
-        self.tokenizer, self.model, self.image_processor = load_vla(model_path=model_path)
-        self.dataset_statistics = load_statistics_from_json(model_path)
+        self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_vla(model_path=model_path)
+        # self.dataset_statistics = load_statistics_from_json(model_path)
 
-    def unnorm_action(self, action):
-        mask = self.dataset_statistics['action']['mask']
-        action = action * (self.dataset_statistics['action']['std'] * mask) + (self.dataset_statistics['action']['mean'] * mask)
+    def unnorm_action(self, unnorm_key, action):
+        mask = self.dataset_statistics[unnorm_key]['action']['mask']
+        action = np.where(
+            mask,  # Condition: apply unnormalization where mask is True
+            action * self.dataset_statistics[unnorm_key]['action']['std'] + self.dataset_statistics[unnorm_key]['action']['mean'],  # Unnormalized action
+            action  # Original action where mask is False
+        )
         return action
 
     def inference_prompt(self, image, prompt):
         images = [image]
         images_tensor = process_images(images, self.image_processor, self.model.config).to(self.model.device, dtype=torch.float16)
-        # prompt = f'What action should the robot take to {lang}?'
-        prompt = 'what objects can you see?'
+        prompt = f'What action should the robot take to {prompt}?'
+        # prompt = 'what objects can you see?'
         conv = conv_templates[self.args.conv_mode].copy()
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
@@ -59,13 +63,13 @@ class VLAModel:
             outputs = outputs[: -len(stop_str)]
         return f"{outputs.strip()}"
 
-    def inference_action(self, image, prompt):
+    def inference_action(self, unnorm_key, image, prompt):
         images = [image]
+        # Check whether this process_images is same as dataset
         images_tensor = process_images(images, self.image_processor, self.model.config).to(self.model.device, dtype=torch.float16)
         prompt = f'What action should the robot take to {prompt}?'
-        # prompt = 'what objects can you see?'
 
-        conv = conv_templates['v1'].copy()
+        conv = conv_templates['v1'].copy() # Hard-coded
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
@@ -78,7 +82,7 @@ class VLAModel:
                 use_cache=True,
             )
         action = action.cpu().numpy()[0]
-        action = self.unnorm_action(action)
+        action = self.unnorm_action(unnorm_key, action)
         return action
 
 def inference_once(args):
@@ -88,7 +92,6 @@ def inference_once(args):
 
     images = [Image.open(args.image_file).convert("RGB")]
     images_tensor = process_images(images, image_processor, model.config).to(model.device, dtype=torch.float16)
-    print(images_tensor.shape)
     conv = conv_templates[args.conv_mode].copy()
     conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + args.prompt)
     conv.append_message(conv.roles[1], None)

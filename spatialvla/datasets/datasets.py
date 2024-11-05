@@ -20,7 +20,6 @@ from transformers import PreTrainedTokenizerBase
 from transformers import AutoTokenizer, BitsAndBytesConfig
 
 from spatialvla.mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
-from spatialvla.dataset.spec import ModuleSpec
 # from prismatic.models.backbones.llm.prompting import PromptBuilder
 # from prismatic.models.backbones.vision import ImageTransform
 

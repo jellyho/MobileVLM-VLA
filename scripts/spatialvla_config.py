@@ -3,7 +3,6 @@ from ml_collections.config_dict import FieldReference, placeholder
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence, List, Any
 import transformers
-from spatialvla.dataset.spec import ModuleSpec
 
 ## head args template
 # MLP
