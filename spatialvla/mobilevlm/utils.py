@@ -9,7 +9,7 @@ import logging.handlers
 from PIL import Image
 from io import BytesIO
 from transformers import StoppingCriteria
-from mobilevlm.constants import LOGDIR, IMAGE_TOKEN_INDEX
+from spatialvla.mobilevlm.constants import LOGDIR, IMAGE_TOKEN_INDEX
 
 
 server_error_msg = "**NETWORK ERROR DUE TO HIGH TRAFFIC. PLEASE REGENERATE OR REFRESH THIS PAGE.**"

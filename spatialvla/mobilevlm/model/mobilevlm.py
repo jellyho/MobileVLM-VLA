@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
 from transformers import AutoTokenizer, BitsAndBytesConfig
-from mobilevlm.model.vision_encoder import build_vision_tower
-from mobilevlm.model.vision_projector import build_vision_projector
-from mobilevlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, \
+from spatialvla.mobilevlm.model.vision_encoder import build_vision_tower
+from spatialvla.mobilevlm.model.vision_projector import build_vision_projector
+from spatialvla.mobilevlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, \
     DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
@@ -251,7 +251,7 @@ class MobileVLMMetaForCausalLM(ABC):
 
 def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda"):
 
-    from mobilevlm.model.mobilellama import MobileLlamaForCausalLM
+    from spatialvla.mobilevlm.model.mobilellama import MobileLlamaForCausalLM
 
     kwargs = {"device_map": device_map}
 
@@ -294,9 +294,9 @@ def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_m
     
     return tokenizer, model, image_processor, context_len
 
-def load_pretrained_vlm_for_vla(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda",
-                                 action_len=1, action_dim=7, action_hidden_sizes=[256], hidden_projection='mean'):
-    from mobilevlm.model.mobilellama import MobileLlamaForCausalLM, SpatialVLAForCausalLM, MobileVLMConfig, SpatialVLAConfig
+def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, device_map="auto", device="cuda"):
+    from spatialvla.mobilevlm.model.mobilellama import SpatialVLAForCausalLM, SpatialVLAConfig
+    model_path = model_args.model_path
     kwargs = {"device_map": device_map}
     if load_8bit:
         kwargs['load_in_8bit'] = True
@@ -311,14 +311,13 @@ def load_pretrained_vlm_for_vla(model_path, load_8bit=False, load_4bit=False, de
     else:
         kwargs['torch_dtype'] = torch.float16
 
-
     # Init models
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-    config = MobileVLMConfig.from_pretrained(model_path)
-    config.action_dim = action_dim
-    config.action_len = action_len
-    config.action_hidden_sizes = action_hidden_sizes
-    config.hidden_projection = hidden_projection
+    config = SpatialVLAConfig.from_pretrained(model_path)
+
+    for key, values in model_args.__dict__.items():
+        setattr(config, key, values)
+
     config.model_type='spatialvla'
     model = SpatialVLAForCausalLM.from_pretrained(model_path, config=config, low_cpu_mem_usage=True, **kwargs)
 
@@ -342,11 +341,13 @@ def load_pretrained_vlm_for_vla(model_path, load_8bit=False, load_4bit=False, de
         context_len = model.config.max_sequence_length
     else:
         context_len = 2048
+
+    model.get_model().mm_projector.to(model.device, dtype=torch.float16)
     
     return tokenizer, model, image_processor, context_len
 
 def load_vla(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda"):
-    from mobilevlm.model.mobilellama import MobileLlamaForCausalLM, SpatialVLAForCausalLM, MobileVLMConfig, SpatialVLAConfig
+    from spatialvla.mobilevlm.model.mobilellama import SpatialVLAForCausalLM, SpatialVLAConfig
 
     kwargs = {"device_map": device_map}
     if load_8bit:
@@ -363,7 +364,6 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device_map="auto", de
         kwargs['torch_dtype'] = torch.float16
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-    # config = SpatialVLAConfig.from_pretrained(model_path)
     model = SpatialVLAForCausalLM.from_pretrained(model_path)
 
     mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
@@ -380,6 +380,9 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device_map="auto", de
     elif not vision_tower.is_loaded:
         vision_tower.load_model()
     vision_tower.to(device=device, dtype=torch.float16)
+
+    model.get_model().mm_projector.to(self.model.device, dtype=torch.float16)
+
     image_processor = vision_tower.image_processor
 
     return tokenizer, model, image_processor

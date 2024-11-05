@@ -6,6 +6,6 @@ torchrun --standalone --nnodes 1 --nproc-per-node 1 scripts/finetune.py \
     --action_len 1 \
     --learning_rate 1e-5 \
     --hidden_projection "mean" \
-    --temp_dir "v1_tmp" \
-    --output_dir "v1" \
+    --temp_dir "v1_test_tmp" \
+    --output_dir "v1_test" \
     --max_steps 200000

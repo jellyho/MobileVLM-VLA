@@ -5,8 +5,8 @@ import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaModel, LlamaForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
-from mobilevlm.model.mobilevlm import MobileVLMMetaModel, MobileVLMMetaForCausalLM
-from mobilevlm.model.action_heads import MLPHead
+from spatialvla.mobilevlm.model.mobilevlm import MobileVLMMetaModel, MobileVLMMetaForCausalLM
+from spatialvla.mobilevlm.model.action_heads import MLPHead
 
 class MobileVLMConfig(LlamaConfig):
     model_type = "mobilevlm"
@@ -17,8 +17,7 @@ class SpatialVLAConfig(MobileVLMConfig):
     def __init__(self, **kwargs):
         self.action_dim = None
         self.action_len = None
-        self.action_hidden_sizes = None
-        self.hidden_projection = 'last'
+        self.head_args = None
         super().__init__(**kwargs)
 
 
@@ -45,7 +44,8 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
         # NLP Head Version
-        self.action_head = MLPHead(config.hidden_size, config.action_hidden_sizes, config.action_dim * config.action_len)
+        if config.head_args['head_type'] == 'MLP':
+            self.action_head = MLPHead(config.hidden_size, config.head_args['action_hidden_sizes'], config.action_dim * config.action_len)
         self.config = config
         self.post_init()  # Initialize weights and apply final processing
     
@@ -86,10 +86,13 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         )
 
         hidden = outputs[0]
-        if self.config.hidden_projection == 'last':
+        if self.config.head_args['hidden_projection'] == 'last':
             action_hidden = hidden[:, -1] # [batch, dim]
-        elif self.config.hidden_projection == 'mean':
+        elif self.config.head_args['hidden_projection'] == 'mean':
             action_hidden = torch.mean(hidden, axis=1)
+        elif self.config.head_args['hidden_projection'] == 'pass':
+            action_hidden = hidden # [batch, token_num, dim]
+            
         action = self.action_head(action_hidden)
         action = action.reshape(-1, self.config.action_len, self.config.action_dim)
         return action
@@ -126,7 +129,6 @@ class MobileLlamaForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         input_ids, attention_mask, past_key_values, inputs_embeds, labels = \
             self.prepare_inputs_labels_for_multimodal(input_ids, attention_mask, past_key_values, labels, images)
 
-        print(attention_mask)
         # attention_mask = None
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.model(

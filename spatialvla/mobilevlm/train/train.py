@@ -9,11 +9,11 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Sequence, List
 import torch
 from torch.utils.data import Dataset
-from mobilevlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from mobilevlm.train.trainer import VLMTrainer
-from mobilevlm import conversation as conversation_lib
-from mobilevlm.model.mobilellama import MobileLlamaForCausalLM
-from mobilevlm.utils import tokenizer_image_token
+from spatialvla.mobilevlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from spatialvla.mobilevlm.train.trainer import VLMTrainer
+from spatialvla.mobilevlm import conversation as conversation_lib
+from spatialvla.mobilevlm.model.mobilellama import MobileLlamaForCausalLM
+from spatialvla.mobilevlm.utils import tokenizer_image_token
 
 local_rank = None
 

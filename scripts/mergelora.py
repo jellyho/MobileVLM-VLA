@@ -5,8 +5,8 @@ from pathlib import Path
 from peft import PeftModel
 from transformers import AutoTokenizer, AutoConfig, BitsAndBytesConfig
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
-from mobilevlm.model.mobilellama import MobileLlamaForCausalLM, SpatialVLAForCausalLM
-from mobilevlm.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from spatialvla.mobilevlm.model.mobilellama import MobileLlamaForCausalLM, SpatialVLAForCausalLM
+from spatialvla.mobilevlm.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
 def merge_lora(model_base, model_path, save_path):

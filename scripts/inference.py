@@ -6,11 +6,11 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
 
-from mobilevlm.model.mobilevlm import load_vla, load_pretrained_model
-from mobilevlm.conversation import conv_templates, SeparatorStyle
-from mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
-from mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
-from dataset.dataset import load_statistics_from_json
+from spatialvla.mobilevlm.model.mobilevlm import load_vla, load_pretrained_model
+from spatialvla.mobilevlm.conversation import conv_templates, SeparatorStyle
+from spatialvla.mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
+from spatialvla.mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
+from spatialvla.dataset.dataset import load_statistics_from_json
 
 class VLAModel:
     def __init__(self, model_path):

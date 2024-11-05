@@ -3,11 +3,11 @@
 # Make it more memory efficient by monkey patching the LLaMA model with FlashAttn.
 
 # Need to call this before importing transformers.
-from mobilevlm.train.llama_flash_attn import replace_llama_attn_with_flash_attn
+from spatialvla.mobilevlm.train.llama_flash_attn import replace_llama_attn_with_flash_attn
 
 replace_llama_attn_with_flash_attn()
 
-from mobilevlm.train.train import train
+from spatialvla.mobilevlm.train.train import train
 
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True

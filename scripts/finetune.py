@@ -7,29 +7,29 @@ import copy
 import json
 import logging
 import pathlib
-import transformers
 from tqdm import tqdm
-from transformers import AutoTokenizer, BitsAndBytesConfig
+import transformers
 from transformers.trainer import ALL_LAYERNORM_LAYERS, get_parameter_names
 from PIL import Image
 from accelerate import PartialState
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Optional, Sequence, List
 from torch.nn import MSELoss, L1Loss, SmoothL1Loss
 from torch.optim import AdamW, Adam
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
-from dataset.dataset import RLDSDataset, save_statistics_to_json
-from mobilevlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from mobilevlm import conversation as conversation_lib
-from mobilevlm.utils import tokenizer_image_token
-from mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla
-from mobilevlm.model.mobilellama import MobileLlamaForCausalLM, SpatialVLAForCausalLM, MobileVLMConfig, SpatialVLAConfig
-from mobilevlm.train.train import find_all_linear_names, get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3
+
+from spatialvla.datasets import RLDSDataset, RLDSBatchTransform
+from spatialvla.datasets.rlds.utils.data_utils import save_dataset_statistics
+from spatialvla.datasets.rlds.utils.data_utils import PaddedCollatorForActionPrediction
+
+from spatialvla.mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla
+from spatialvla.mobilevlm.train.train import find_all_linear_names, get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3
 from mergelora import merge_lora
 
-from spatialvla_config import dataset_kwargs, traj_transform_kwargs, frame_transform_kwargs, ModelArguments, TrainingArguments
+from spatialvla_config import ModelArguments, TrainingArguments
+
 tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to gpu
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -52,43 +52,45 @@ load_4bit = training_args.bits == 4
 load_8bit = training_args.bits == 8
 
 tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
-    model_args.model_path, 
+    model_args, 
     load_8bit, 
     load_4bit,
     device='cuda',
-    action_len=model_args.action_len,
-    action_dim=model_args.action_dim,
-    action_hidden_sizes=model_args.action_hidden_sizes,
-    hidden_projection=model_args.hidden_projection
 )
-
 model.config.use_cache = False
 model = model.to(device_id)
-for p in model.get_model().mm_projector.parameters():
-    p.requires_grad = True
-for p in model.action_head.parameters():
-    p.requires_grad = True
 print('Pretrained VLM Loaded')
 
-dataset = RLDSDataset(
-    dataset_kwargs,
-    tokenizer=tokenizer,
-    image_processor=image_processor,
-    shuffle_buffer_size=training_args.shuffle_buffer_size,
-    traj_transform_kwargs=traj_transform_kwargs,
-    frame_transform_kwargs=frame_transform_kwargs,
-    train=True,
+batch_transform = RLDSBatchTransform(
+    tokenizer,
+    image_processor,
 )
+
+dataset = RLDSDataset(
+    data_root_dir=training_args.data_root_dir,
+    data_mix=training_args.data_mix,
+    batch_transform=batch_transform,
+    shuffle_buffer_size=training_args.shuffle_buffer_size,
+    train=True,
+    window_size=1,
+    future_action_window_size=model_args.action_len - 1
+)
+
+collator = PaddedCollatorForActionPrediction(tokenizer.model_max_length, tokenizer.pad_token_id, padding_side='right')
+
 dataloader = DataLoader(
     dataset,
     batch_size=training_args.batch_size,
     sampler=None,
+    collate_fn=collator,
     num_workers=0,  # Important =>> Set to 0 if using RLDS; TFDS rolls its own parallelism!
 )
 # Save statistics to a JSON file
 if not os.path.exists(training_args.output_dir):
     os.makedirs(training_args.output_dir)
-save_statistics_to_json(dataset.dataset.dataset_statistics, f"{training_args.output_dir}/dataset_statistics.json")
+temp_dir = f'{training_args.output_dir}_tmp'
+
+save_dataset_statistics(dataset.dataset_statistics, training_args.output_dir)
 print('Dataset Loaded')
 
 # Quantization
@@ -144,6 +146,7 @@ if training_args.bits in [4, 8]:
             if hasattr(module, 'weight'):
                 if training_args.bf16 and module.weight.dtype == torch.float32:
                     module = module.to(torch.bfloat16)
+
 for p in model.get_model().mm_projector.parameters():
     p.requires_grad = True
 for p in model.action_head.parameters():
@@ -204,7 +207,7 @@ if distributed_state.is_main_process:
     wandb.init(
         entity=training_args.wandb_entity,
         project=training_args.wandb_project,
-        name=f"{dataset_kwargs['name']}_chunk{model_args.action_len}"
+        name=f"{training_args.data_mix}_chunk{model_args.action_len}"
     )
 
 ## Training LOOP!
@@ -215,8 +218,9 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
     for batch_idx, batch in enumerate(dataloader):
         with torch.autocast('cuda', dtype=torch.float16):
             action = model.forward(
-                input_ids=batch['input_ids'][:, 0, :].to(device_id),
+                input_ids=batch['input_ids'].to(device_id),
                 images=batch['pixel_values'].to(device_id),
+                attention_mask=batch['attention_mask'].to(device_id)
             )
             loss = loss_fn(action, batch['action'].to(device_id))
             # print(loss.item())
@@ -272,14 +276,14 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
 
                 dist.barrier()
 
-                model.module.config.save_pretrained(training_args.temp_dir)
+                model.module.config.save_pretrained(temp_dir)
                 state_dict = get_peft_state_maybe_zero_3(model.module.named_parameters(), training_args.lora_bias)
                 non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.module.named_parameters())
-                model.module.save_pretrained(training_args.temp_dir, state_dict=state_dict)
-                torch.save(non_lora_state_dict, os.path.join(training_args.temp_dir, 'non_lora_trainables.bin'))
+                model.module.save_pretrained(temp_dir, state_dict=state_dict)
+                torch.save(non_lora_state_dict, os.path.join(temp_dir, 'non_lora_trainables.bin'))
 
                 # Merge lora model into output dir
-                merge_lora(model_args.model_path, training_args.temp_dir, training_args.output_dir)
+                merge_lora(model_args.model_path, temp_dir, training_args.output_dir)
 
                 dist.barrier()
 
@@ -288,12 +292,12 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
            
 
 # Save configs and state_dicts into temp dir
-model.config.save_pretrained(training_args.temp_dir)
+model.config.save_pretrained(temp_dir)
 state_dict = get_peft_state_maybe_zero_3(model.named_parameters(), training_args.lora_bias)
 non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.named_parameters())
-model.save_pretrained(training_args.temp_dir, state_dict=state_dict)
-torch.save(non_lora_state_dict, os.path.join(training_args.temp_dir, 'non_lora_trainables.bin'))
+model.save_pretrained(temp_dir, state_dict=state_dict)
+torch.save(non_lora_state_dict, os.path.join(temp_dir, 'non_lora_trainables.bin'))
 
 # Merge lora model into output dir
-merge_lora(model_args.model_path, training_args.temp_dir, training_args.output_dir)
+merge_lora(model_args.model_path, temp_dir, training_args.output_dir)
 print('Checkpoint Saved')
