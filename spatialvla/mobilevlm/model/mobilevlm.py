@@ -295,10 +295,12 @@ def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_m
     
     return tokenizer, model, image_processor, context_len
 
-def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, device_map="auto", device="cuda"):
+def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, device="cuda"):
     from spatialvla.mobilevlm.model.mobilellama import SpatialVLAForCausalLM, SpatialVLAConfig
     model_path = model_args.model_path
-    kwargs = {"device_map": device_map}
+    # kwargs = {"device_map": device_map}
+    # kwargs = {"device_map": {"":device}}
+    kwargs = {}
     if load_8bit:
         kwargs['load_in_8bit'] = True
     elif load_4bit:
@@ -320,7 +322,10 @@ def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, de
         setattr(config, key, values)
 
     config.model_type='spatialvla'
-    model = SpatialVLAForCausalLM.from_pretrained(model_path, config=config, low_cpu_mem_usage=True, **kwargs)
+    model = SpatialVLAForCausalLM.from_pretrained(model_path, config=config, low_cpu_mem_usage=False, **kwargs)
+    model.to(device)
+
+    print(torch.isnan(model.action_head.map_head.p).any())
 
     mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
     mm_use_im_patch_token = getattr(model.config, "mm_use_im_patch_token", True)
@@ -347,10 +352,11 @@ def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, de
     
     return tokenizer, model, image_processor, context_len
 
-def load_vla(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda"):
+def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda"):
     from spatialvla.mobilevlm.model.mobilellama import SpatialVLAForCausalLM, SpatialVLAConfig
 
-    kwargs = {"device_map": device_map}
+    # kwargs = {"device_map": device_map}
+    kwargs = {"device_map": {"":device}}
     if load_8bit:
         kwargs['load_in_8bit'] = True
     elif load_4bit:

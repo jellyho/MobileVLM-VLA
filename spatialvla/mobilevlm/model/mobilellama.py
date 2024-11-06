@@ -6,7 +6,7 @@ from torch.nn import CrossEntropyLoss
 from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaModel, LlamaForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from spatialvla.mobilevlm.model.mobilevlm import MobileVLMMetaModel, MobileVLMMetaForCausalLM
-from spatialvla.mobilevlm.model.action_heads import MLPHead
+from spatialvla.mobilevlm.model.action_heads import MLPHead, ContinuousActionHead, MAPHead
 
 class MobileVLMConfig(LlamaConfig):
     model_type = "mobilevlm"
@@ -42,12 +42,15 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         self.model = SpatialVLAModel(config)
         # For compatibility, lm_head is only used for token embedding resizing
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.config = config
+        self.post_init()  # Initialize weights and apply final processing
 
         # NLP Head Version
         if config.head_args['head_type'] == 'MLP':
             self.action_head = MLPHead(config.hidden_size, config.head_args['action_hidden_sizes'], config.action_dim * config.action_len)
-        self.config = config
-        self.post_init()  # Initialize weights and apply final processing
+        elif config.head_args['head_type'] == 'MAP':
+            self.action_head = ContinuousActionHead(config.hidden_size, config.action_dim * config.action_len, config.head_args['num_heads'])
+            # self.action_head = MAPHead(config.hidden_size, config.head_args['num_heads'])
     
     def get_model(self):
         return self.model
@@ -94,6 +97,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             action_hidden = hidden # [batch, token_num, dim]
             
         action = self.action_head(action_hidden)
+        
         action = action.reshape(-1, self.config.action_len, self.config.action_dim)
         return action
         

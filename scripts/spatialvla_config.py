@@ -15,6 +15,7 @@ MLPHead = {
 # MAP
 MAPHead = {
     'head_type': 'MAP',
+    'num_heads': 8,
     'hidden_projection': 'pass'
 }
 
@@ -22,7 +23,7 @@ MAPHead = {
 @dataclass
 class ModelArguments:
     model_path: Optional[str] = field(default="remyxai/SpaceLLaVA-lite")
-    head_args: Dict[str, Any] = field(default_factory=lambda: MLPHead) 
+    head_args: Dict[str, Any] = field(default_factory=lambda: MAPHead) 
     action_dim: int = field(default=7)
     action_len: int = field(default=1)
 
@@ -47,13 +48,14 @@ class TrainingArguments(transformers.TrainingArguments):
 
     # Training
     seed = 42
-    batch_size = 32
-    shuffle_buffer_size = 10000
-    max_steps: int = field(default=50000)
+    batch_size: int = field(default=32)
+    shuffle_buffer_size: int = field(default=100000)
+    image_aug: bool = field(default=False)
+    max_steps: int = field(default=50000)  
     save_steps: int = field(default=500)
-    learning_rate = 1e-4
+    learning_rate: float = field(default=1e-4)
     mm_projector_lr: Optional[float] = None
-    gradient_accumulation_steps = 1
+    gradient_accumulation_steps: int = field(default=1)
 
     # Quantization
     double_quant: bool = field(default=True)

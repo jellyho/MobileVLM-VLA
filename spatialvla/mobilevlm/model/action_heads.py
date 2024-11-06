@@ -38,9 +38,8 @@ class MLPHead(nn.Module):
 class MAPHead(nn.Module):
     """Multihead Attention Pooling using PyTorch.
 
-    Conversion of the original JAX implementation for PyTorch.
+    Conversion of the original JAX implementation from octo for PyTorch
     """
-
     def __init__(self, input_dim, mlp_dim=None, num_heads=8, num_readouts=1):
         super(MAPHead, self).__init__()
         
@@ -53,9 +52,8 @@ class MAPHead(nn.Module):
         self.attention = nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, batch_first=True)
 
         # Probe parameter (initialized like in JAX)
-        self.probe = nn.Parameter(
-            nn.init.xavier_uniform_(torch.empty(1, num_readouts, input_dim))
-        )
+        self.p = nn.Parameter(torch.empty(1, num_readouts, input_dim))
+        nn.init.xavier_uniform_(self.p)
 
         # LayerNorm layer
         self.layer_norm = nn.LayerNorm(input_dim)
@@ -65,24 +63,23 @@ class MAPHead(nn.Module):
     
     def forward(self, x, mask=None):
         batch_size, l, d = x.shape
-        probe = self.probe.expand(batch_size, -1, -1)  # Expand probe to match batch size
+
+        p = self.p.expand(batch_size, -1, -1)  # Expand probe to match batch size
 
         if mask is not None:
             mask = mask.unsqueeze(1)  # Expand for multihead attention compatibility
 
         # Multihead Attention with the probe
-        out, _ = self.attention(probe, x, x, key_padding_mask=mask)
+        out, _ = self.attention(p, x, x, key_padding_mask=mask)
 
         # Apply LayerNorm and MLP Block
         y = self.layer_norm(out)
         out = out + self.mlp_block(y)
-        
         return out
 
 
 class MlpBlock(nn.Module):
     """MLP Block with two linear layers and GELU activation."""
-
     def __init__(self, input_dim, hidden_dim):
         super(MlpBlock, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
@@ -94,9 +91,9 @@ class MlpBlock(nn.Module):
         return x
 
 class ContinuousActionHead(nn.Module):
-    def __init__(self, input_size, output_size):
+    def __init__(self, input_size, output_size, num_heads):
         super(ContinuousActionHead, self).__init__()
-        self.map_head = MAPHead(input_size)
+        self.map_head = MAPHead(input_size, num_heads=num_heads)
         self.projection = nn.Linear(input_size, output_size)
 
     def forward(self, x):

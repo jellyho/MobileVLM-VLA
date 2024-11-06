@@ -29,7 +29,7 @@ class VLAModel:
 
     def inference_prompt(self, image, prompt):
         images = [image]
-        images_tensor = process_images(images, self.image_processor, self.model.config).to(self.model.device, dtype=torch.float16)
+        images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=torch.float16)
         prompt = f'What action should the robot take to {prompt}?'
         # prompt = 'what objects can you see?'
         conv = conv_templates[self.args.conv_mode].copy()
@@ -66,7 +66,7 @@ class VLAModel:
     def inference_action(self, unnorm_key, image, prompt):
         images = [image]
         # Check whether this process_images is same as dataset
-        images_tensor = process_images(images, self.image_processor, self.model.config).to(self.model.device, dtype=torch.float16)
+        images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=torch.float16)
         prompt = f'What action should the robot take to {prompt}?'
 
         conv = conv_templates['v1'].copy() # Hard-coded

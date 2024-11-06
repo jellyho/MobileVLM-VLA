@@ -34,7 +34,8 @@ tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 distributed_state = PartialState()
-torch.cuda.set_device(device_id := distributed_state.local_process_index)
+device_id = distributed_state.local_process_index
+torch.cuda.set_device(device_id)
 torch.cuda.empty_cache()
 
 local_rank = None
@@ -55,7 +56,7 @@ tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
     model_args, 
     load_8bit, 
     load_4bit,
-    device='cuda',
+    device=device_id,
 )
 model.config.use_cache = False
 model = model.to(device_id)
@@ -72,6 +73,7 @@ dataset = RLDSDataset(
     batch_transform=batch_transform,
     shuffle_buffer_size=training_args.shuffle_buffer_size,
     train=True,
+
     window_size=1,
     future_action_window_size=model_args.action_len - 1
 )
@@ -274,8 +276,6 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
             if distributed_state.is_main_process:
                 print(f"Saving Model Checkpoint for Step {gradient_step_idx}")
 
-                dist.barrier()
-
                 model.module.config.save_pretrained(temp_dir)
                 state_dict = get_peft_state_maybe_zero_3(model.module.named_parameters(), training_args.lora_bias)
                 non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.module.named_parameters())
@@ -285,7 +285,7 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 # Merge lora model into output dir
                 merge_lora(model_args.model_path, temp_dir, training_args.output_dir)
 
-                dist.barrier()
+            dist.barrier()
 
         if gradient_step_idx == training_args.max_steps:
             print(f"Max step {training_args.max_steps} reached! Stopping training...")
