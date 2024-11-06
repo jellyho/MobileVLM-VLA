@@ -23,7 +23,7 @@ MAPHead = {
 @dataclass
 class ModelArguments:
     model_path: Optional[str] = field(default="remyxai/SpaceLLaVA-lite")
-    head_args: Dict[str, Any] = field(default_factory=lambda: MAPHead) 
+    head_args: Dict[str, Any] = field(default_factory=lambda: MLPHead) 
     action_dim: int = field(default=7)
     action_len: int = field(default=1)
 
