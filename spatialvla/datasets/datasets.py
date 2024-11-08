@@ -23,7 +23,6 @@ from spatialvla.mobilevlm.utils import disable_torch_init, process_images, token
 # from prismatic.models.backbones.llm.prompting import PromptBuilder
 # from prismatic.models.backbones.vision import ImageTransform
 
-from spatialvla.mobilevlm.utils import process_images
 from spatialvla.mobilevlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from spatialvla.mobilevlm.conversation import conv_templates, SeparatorStyle
 
@@ -47,8 +46,11 @@ class RLDSBatchTransform:
     def __call__(self, rlds_batch: Dict[str, Any]) -> Dict[str, Any]:
         """Converts a RLDS batch to the format expected by the OpenVLA collator/models."""
         dataset_name, action = rlds_batch["dataset_name"], torch.Tensor(rlds_batch["action"]).to(torch.float16)
-        img = Image.fromarray(rlds_batch["observation"]["image_primary"][0]) # Only using image_primary, window size = 1
-        new_img = process_images(img, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(torch.float16)
+        imgs = []
+        for img in rlds_batch["observation"]["image_primary"]:
+            imgs.append(Image.fromarray(img))
+        # pil = Image.fromarray(rlds_batch["observation"]["image_primary"][0])
+        new_img = process_images(imgs, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(torch.float16)
 
         # Construct Chat-based Prompt =>> Input is default query + language instruction, output are the action tokens
         conv = conv_templates['v1'].copy()
@@ -62,7 +64,7 @@ class RLDSBatchTransform:
         # Tokenize (w/ `base_tokenizer`)
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"))
 
-        return dict(pixel_values=new_img, input_ids=input_ids, action=action, dataset_name=dataset_name)
+        return dict(pixel_values=new_img, input_ids=input_ids, action=action, dataset_name=dataset_name, img=img)
 
 
 class RLDSDataset(IterableDataset):

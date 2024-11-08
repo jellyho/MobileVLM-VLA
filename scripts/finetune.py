@@ -28,7 +28,7 @@ from spatialvla.mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla
 from spatialvla.mobilevlm.train.train import find_all_linear_names, get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3
 from mergelora import merge_lora
 
-from spatialvla_config import ModelArguments, TrainingArguments
+from spatialvla_config import ModelArguments, TrainingArguments, HEAD_ARGS
 
 tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to gpu
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -47,6 +47,8 @@ def rank0_print(*args):
 ## Argument parsing
 parser = transformers.HfArgumentParser((ModelArguments, TrainingArguments))
 model_args, training_args = parser.parse_args_into_dataclasses()
+model_args.head_args = HEAD_ARGS[model_args.action_head]
+
 
 ## Load Pretrained VLM
 load_4bit = training_args.bits == 4
@@ -73,7 +75,6 @@ dataset = RLDSDataset(
     batch_transform=batch_transform,
     shuffle_buffer_size=training_args.shuffle_buffer_size,
     train=True,
-
     window_size=1,
     future_action_window_size=model_args.action_len - 1
 )
@@ -192,12 +193,7 @@ optimizer_grouped_parameters = [
         "eps":1e-5
     },
 ]
-optimizer = optimizer = torch.optim.AdamW(optimizer_grouped_parameters)
-# lora_params = [param for name, param in model.named_parameters() if 'lora' in name]
-# non_lora_params = [param for name, param in model.named_parameters() if 'lora' not in name and param.requires_grad]
-# print([name for name, param in model.named_parameters() if 'lora' not in name and param.requires_grad])
-# layernorm_params = [param for name, param in model.named_parameters() if 'lora' not in name and 'layernorm' in name and param.requires_grad]
-
+optimizer = torch.optim.AdamW(optimizer_grouped_parameters)
 
 # loss_fn = MSELoss()
 # loss_fn = L1Loss()
@@ -209,7 +205,7 @@ if distributed_state.is_main_process:
     wandb.init(
         entity=training_args.wandb_entity,
         project=training_args.wandb_project,
-        name=f"{training_args.data_mix}_chunk{model_args.action_len}"
+        name=f"{training_args.data_mix}_{model_args.action_head}_chunk{model_args.action_len}"
     )
 
 ## Training LOOP!
@@ -219,12 +215,28 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
     optimizer.zero_grad()
     for batch_idx, batch in enumerate(dataloader):
         with torch.autocast('cuda', dtype=torch.float16):
-            action = model.forward(
-                input_ids=batch['input_ids'].to(device_id),
-                images=batch['pixel_values'].to(device_id),
-                attention_mask=batch['attention_mask'].to(device_id)
-            )
-            loss = loss_fn(action, batch['action'].to(device_id))
+            if model_args.head_args['head_type'] == 'Diffusion':
+                action_hidden = model.forward(
+                    input_ids=batch['input_ids'].to(device_id),
+                    images=batch['pixel_values'].to(device_id),
+                    attention_mask=batch['attention_mask'].to(device_id),
+                    without_action_head=True
+                )
+                loss = model.module.action_head.loss(action_hidden, batch['action'].to(device_id))
+                # action_loss validation?
+
+                with torch.no_grad():
+                    action_loss = loss_fn(
+                        model.module.action_head.predict_action(action_hidden), 
+                        batch['action'].to(device_id)
+                    )
+            else:
+                action = model.forward(
+                    input_ids=batch['input_ids'].to(device_id),
+                    images=batch['pixel_values'].to(device_id),
+                    attention_mask=batch['attention_mask'].to(device_id)
+                )
+                loss = loss_fn(action, batch['action'].to(device_id)) # * model.args.action_dim
             # print(loss.item())
         normalized_loss = loss / training_args.gradient_accumulation_steps
         normalized_loss.backward()
@@ -233,7 +245,7 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
         gradient_step_idx = batch_idx // training_args.gradient_accumulation_steps
 
         # Wandb Log
-        if distributed_state.is_main_process and gradient_step_idx % 10 == 0:
+        if distributed_state.is_main_process and gradient_step_idx % 100 == 0:
             max_grad = 0.0
             total_grad_sum = 0.0
             total_grad_count = 0
@@ -256,17 +268,29 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
             global_norm = global_norm ** 0.5
 
             # Log global gradient statistics to WandB
-            wandb.log({
-                "grad/max": max_grad,
-                "grad/mean": mean_grad,
-                "grad/norm": global_norm,
-                "action_loss": loss.item(),  # Log loss globally as well
-            },
-            step=gradient_step_idx             
-            )
+            if model_args.head_args['head_type'] == 'Diffusion':
+                wandb.log({
+                    "grad/max": max_grad,
+                    "grad/mean": mean_grad,
+                    "grad/norm": global_norm,
+                    "action_loss": action_loss.item(),  # Log loss globally as well
+                    "eps_loss" : loss.item()
+                },
+                step=gradient_step_idx             
+                )
+            else:
+                wandb.log({
+                    "grad/max": max_grad,
+                    "grad/mean": mean_grad,
+                    "grad/norm": global_norm,
+                    "action_loss": loss.item(),  # Log loss globally as well
+                },
+                step=gradient_step_idx             
+                )
         
         # Update
         if (batch_idx + 1) % training_args.gradient_accumulation_steps == 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=training_args.gradient_clip)
             optimizer.step()
             optimizer.zero_grad()
             progress.update()

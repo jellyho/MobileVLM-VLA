@@ -100,4 +100,3 @@ class ContinuousActionHead(nn.Module):
         pooled = self.map_head(x)
         output = self.projection(pooled)
         return output
-

@@ -16,7 +16,6 @@ class VLAModel:
     def __init__(self, model_path):
         disable_torch_init()
         self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_vla(model_path=model_path)
-        # self.dataset_statistics = load_statistics_from_json(model_path)
 
     def unnorm_action(self, unnorm_key, action):
         mask = self.dataset_statistics[unnorm_key]['action']['mask']

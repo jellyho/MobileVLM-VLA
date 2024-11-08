@@ -7,6 +7,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaMod
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from spatialvla.mobilevlm.model.mobilevlm import MobileVLMMetaModel, MobileVLMMetaForCausalLM
 from spatialvla.mobilevlm.model.action_heads import MLPHead, ContinuousActionHead, MAPHead
+from spatialvla.mobilevlm.model.diffusion_heads import DiffusionActionHead
 
 class MobileVLMConfig(LlamaConfig):
     model_type = "mobilevlm"
@@ -50,7 +51,19 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             self.action_head = MLPHead(config.hidden_size, config.head_args['action_hidden_sizes'], config.action_dim * config.action_len)
         elif config.head_args['head_type'] == 'MAP':
             self.action_head = ContinuousActionHead(config.hidden_size, config.action_dim * config.action_len, config.head_args['num_heads'])
-            # self.action_head = MAPHead(config.hidden_size, config.head_args['num_heads'])
+        elif config.head_args['head_type'] == 'Diffusion':
+            self.action_head = DiffusionActionHead(
+                config.action_len,
+                config.action_dim,
+                config.head_args['max_action'],
+                config.head_args['loss_type'],
+                config.head_args['time_dim'],
+                config.head_args['num_blocks'],
+                config.head_args['dropout_rate'],
+                config.head_args['hidden_dim'],
+                config.head_args['use_layer_norm'],
+                config.head_args['n_diffusion_samples']
+            )
     
     def get_model(self):
         return self.model
@@ -66,6 +79,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         output_hidden_states: Optional[bool] = False,
         images: Optional[torch.FloatTensor] = None,
         return_dict: Optional[bool] = True,
+        without_action_head = False
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states)
@@ -95,6 +109,9 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             action_hidden = torch.mean(hidden, axis=1)
         elif self.config.head_args['hidden_projection'] == 'pass':
             action_hidden = hidden # [batch, token_num, dim]
+
+        if without_action_head:
+            return action_hidden
             
         action = self.action_head(action_hidden)
         

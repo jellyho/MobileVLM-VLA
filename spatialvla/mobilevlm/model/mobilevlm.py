@@ -346,7 +346,7 @@ def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, de
     else:
         context_len = 2048
 
-    model.get_model().mm_projector.to(model.device, dtype=torch.float16)
+    model.get_model().mm_projector.to(device=device, dtype=torch.float16)
     
     return tokenizer, model, image_processor, context_len
 
@@ -371,6 +371,7 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda"):
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
     model = SpatialVLAForCausalLM.from_pretrained(model_path)
+    model.to(device)
 
     mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
     mm_use_im_patch_token = getattr(model.config, "mm_use_im_patch_token", True)
@@ -387,7 +388,7 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda"):
         vision_tower.load_model()
     vision_tower.to(device=device, dtype=torch.float16)
 
-    model.get_model().mm_projector.to(self.model.device, dtype=torch.float16)
+    model.get_model().mm_projector.to(device=device, dtype=torch.float16)
 
     image_processor = vision_tower.image_processor
 
