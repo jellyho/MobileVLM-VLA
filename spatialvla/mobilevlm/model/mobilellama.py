@@ -82,7 +82,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         output_hidden_states: Optional[bool] = False,
         images: Optional[torch.FloatTensor] = None,
         return_dict: Optional[bool] = True,
-        chat: Optional[bool] = True
+        chat: Optional[bool] = True,
         action = None
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions

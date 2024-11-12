@@ -3,6 +3,7 @@ import torch
 import argparse
 from PIL import Image
 from pathlib import Path
+import numpy as np
 
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
 
