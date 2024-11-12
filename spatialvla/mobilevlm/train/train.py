@@ -161,6 +161,15 @@ def find_all_linear_names(model):
         lora_module_names.remove('lm_head')
     return list(lora_module_names)
 
+def find_all_names_from_module(model, module):
+    modules = [name for name, _ in model.named_modules() if module in name]
+    deepest_modules = []
+    for name in modules:
+        # Check if there's any other module that starts with this name + "."
+        if not any(other.startswith(f"{name}.") for other in modules):
+            deepest_modules.append(name)
+    return deepest_modules
+
 def find_all_non_lora_train_names(model):
     cls = torch.nn.Linear
     lora_module_names = set()

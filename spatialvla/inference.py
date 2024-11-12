@@ -26,11 +26,9 @@ class VLAModel:
         )
         return action
 
-    def inference_prompt(self, image, prompt):
+    def inference_prompt(self, image, prompt, max_new_tokens=100):
         images = [image]
         images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=torch.float16)
-        prompt = f'What action should the robot take to {prompt}?'
-        # prompt = 'what objects can you see?'
         conv = conv_templates[self.args.conv_mode].copy()
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
@@ -43,11 +41,11 @@ class VLAModel:
             output_ids = self.model.generate(
                 input_ids,
                 images=images_tensor,
-                do_sample=True if self.args.temperature > 0 else False,
-                temperature=self.args.temperature,
-                top_p=self.args.top_p,
-                num_beams=self.args.num_beams,
-                max_new_tokens=self.args.max_new_tokens,
+                do_sample=False,
+                temperature=0,
+                top_p=None,
+                num_beams=1,
+                max_new_tokens=max_new_tokens,
                 use_cache=True,
                 stopping_criteria=[stopping_criteria],
             )
@@ -75,7 +73,7 @@ class VLAModel:
         # Input
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
         with torch.inference_mode():
-            action = self.model.forward(
+            action = self.model.forward_action(
                 input_ids=input_ids,
                 images=images_tensor,
                 use_cache=True,

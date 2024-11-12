@@ -347,6 +347,8 @@ def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, de
         context_len = 2048
 
     model.get_model().mm_projector.to(device=device, dtype=torch.float16)
+
+    model.action_head.to(device)
     
     return tokenizer, model, image_processor, context_len
 
@@ -389,6 +391,8 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda"):
     vision_tower.to(device=device, dtype=torch.float16)
 
     model.get_model().mm_projector.to(device=device, dtype=torch.float16)
+
+    model.action_head.to(device)
 
     image_processor = vision_tower.image_processor
 

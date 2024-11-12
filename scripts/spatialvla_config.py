@@ -1,6 +1,6 @@
 from ml_collections import ConfigDict
 from ml_collections.config_dict import FieldReference, placeholder
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Dict, Optional, Sequence, List, Any
 import transformers
 
@@ -60,9 +60,10 @@ class TrainingArguments(transformers.TrainingArguments):
 
     # LoRA
     lora_enable: bool = True
-    lora_r: int = 64
-    lora_alpha: int = 16
-    lora_dropout: float = 0.05
+    lora_rank: int = 64
+    lora_alpha: int = 128
+    use_rslora: bool = False
+    lora_dropout: float = 0.01
     lora_weight_path: str = ""
     lora_bias: str = "none"
 
@@ -74,7 +75,7 @@ class TrainingArguments(transformers.TrainingArguments):
     max_steps: int = field(default=50000)  
     save_steps: int = field(default=500)
     learning_rate: float = field(default=1e-4)
-    gradient_clip: float = field(default=1.0)
+    gradient_clip: float = field(default=0.3)
     mm_projector_lr: Optional[float] = None
     gradient_accumulation_steps: int = field(default=1)
 

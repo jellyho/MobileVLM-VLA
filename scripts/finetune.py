@@ -12,20 +12,21 @@ import transformers
 from transformers.trainer import ALL_LAYERNORM_LAYERS, get_parameter_names
 from PIL import Image
 from accelerate import PartialState
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Dict, Optional, Sequence, List
 from torch.nn import MSELoss, L1Loss, SmoothL1Loss
 from torch.optim import AdamW, Adam
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
+from torch.cuda.amp import GradScaler, autocast
 
 from spatialvla.datasets import RLDSDataset, RLDSBatchTransform
 from spatialvla.datasets.rlds.utils.data_utils import save_dataset_statistics
 from spatialvla.datasets.rlds.utils.data_utils import PaddedCollatorForActionPrediction
 
 from spatialvla.mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla
-from spatialvla.mobilevlm.train.train import find_all_linear_names, get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3
+from spatialvla.mobilevlm.train.train import find_all_linear_names, get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3, find_all_names_from_module
 from mergelora import merge_lora
 
 from spatialvla_config import ModelArguments, TrainingArguments, HEAD_ARGS
@@ -79,6 +80,8 @@ dataset = RLDSDataset(
     future_action_window_size=model_args.action_len - 1
 )
 
+# sampler = DistributedSampler(dataset)
+
 collator = PaddedCollatorForActionPrediction(tokenizer.model_max_length, tokenizer.pad_token_id, padding_side='right')
 
 dataloader = DataLoader(
@@ -112,25 +115,29 @@ if training_args.gradient_checkpointing:
         model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
 print('LoRA applied to ', find_all_linear_names(model))
-
+projector_modules = find_all_names_from_module(model, 'mm_projector')
+action_head_modules = find_all_names_from_module(model, 'action_head')
+print(projector_modules)
+print(action_head_modules)
 ## LORA SETTING
 if training_args.lora_enable:
     from peft import LoraConfig, get_peft_model
     lora_config = LoraConfig(
-        r=training_args.lora_r,
+        r=training_args.lora_rank,
         lora_alpha=training_args.lora_alpha,
         target_modules=find_all_linear_names(model),
         lora_dropout=training_args.lora_dropout,
         bias=training_args.lora_bias,
         init_lora_weights="gaussian",
-        task_type="CAUSAL_LM",
+        modules_to_save=projector_modules + action_head_modules,
+        use_rslora=training_args.use_rslora
     )
     if training_args.bits == 16:
         if training_args.bf16:
             model.to(torch.bfloat16)
         if training_args.fp16:
             model.to(torch.float16)
-    rank0_print("Adding LoRA adapters...")
+    print("Adding LoRA adapters...")
     model = get_peft_model(model, lora_config)
 
 print(model)
@@ -150,15 +157,14 @@ if training_args.bits in [4, 8]:
                 if training_args.bf16 and module.weight.dtype == torch.float32:
                     module = module.to(torch.bfloat16)
 
-for p in model.get_model().mm_projector.parameters():
-    p.requires_grad = True
-for p in model.action_head.parameters():
-    p.requires_grad = True
+# for p in model.get_model().mm_projector.parameters():
+#     p.requires_grad = True
+# for p in model.action_head.parameters():
+#     p.requires_grad = True
 model.print_trainable_parameters()
 print('LoRA Loaded')
 
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
-
 decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
 decay_parameters = [name for name in decay_parameters if "bias" not in name]
 unused_parameters = [name for name, _ in model.named_parameters() if "vision_tower" in name and "layers" not in name]
@@ -205,7 +211,8 @@ if distributed_state.is_main_process:
     wandb.init(
         entity=training_args.wandb_entity,
         project=training_args.wandb_project,
-        name=f"{training_args.data_mix}_{model_args.action_head}_chunk{model_args.action_len}"
+        name=f"{training_args.data_mix}_{model_args.action_head}_chunk{model_args.action_len}",
+        config={**asdict(training_args), **asdict(model_args)}
     )
 
 ## Training LOOP!
@@ -216,27 +223,21 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
     for batch_idx, batch in enumerate(dataloader):
         with torch.autocast('cuda', dtype=torch.float16):
             if model_args.head_args['head_type'] == 'Diffusion':
-                action_hidden = model.forward(
+                loss, predicted_action = model.forward_action(
                     input_ids=batch['input_ids'].to(device_id),
                     images=batch['pixel_values'].to(device_id),
                     attention_mask=batch['attention_mask'].to(device_id),
-                    without_action_head=True
+                    action=batch['action'].to(device_id)
                 )
-                loss = model.module.action_head.loss(action_hidden, batch['action'].to(device_id))
-                # action_loss validation?
-
                 with torch.no_grad():
-                    action_loss = loss_fn(
-                        model.module.action_head.predict_action(action_hidden), 
-                        batch['action'].to(device_id)
-                    )
+                    action_loss = loss_fn(predicted_action, batch['action'].to(device_id)) # * model.args.action_dim
             else:
-                action = model.forward(
+                predicted_action = model.forward_action(
                     input_ids=batch['input_ids'].to(device_id),
                     images=batch['pixel_values'].to(device_id),
                     attention_mask=batch['attention_mask'].to(device_id)
                 )
-                loss = loss_fn(action, batch['action'].to(device_id)) # * model.args.action_dim
+                loss = loss_fn(predicted_action, batch['action'].to(device_id)) # * model.args.action_dim
             # print(loss.item())
         normalized_loss = loss / training_args.gradient_accumulation_steps
         normalized_loss.backward()
