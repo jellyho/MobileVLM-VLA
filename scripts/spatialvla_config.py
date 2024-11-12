@@ -76,8 +76,9 @@ class TrainingArguments(transformers.TrainingArguments):
     save_steps: int = field(default=500)
     learning_rate: float = field(default=1e-4)
     gradient_clip: float = field(default=0.3)
-    mm_projector_lr: Optional[float] = None
+    weight_decay: float = field(default=0.1)
     gradient_accumulation_steps: int = field(default=1)
+    mm_projector_lr: Optional[float] = None
 
     # Quantization
     double_quant: bool = field(default=True)

@@ -7,12 +7,13 @@ while :; do
 done
 
 srun --gres=gpu:$1 torchrun --standalone --rdzv_id=$SLURM_JOB_ID --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/finetune.py \
-    --learning_rate 4e-5 \
+    --learning_rate 8e-5 \
     --lora_rank 64 \
     --lora_alpha 32 \
     --use_rslora true \
+    --weight_decay 0.1 \
     --data_mix "lg_cup_color_rightarm" \
-    --output_dir "checkpoints/lora-64-32-rs" \
+    --output_dir "checkpoints/lora-64-32-rs-2gpu" \
     --gradient_clip 1.0 \
     --action_head "MAP" \
     --max_steps 50000 \

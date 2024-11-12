@@ -172,8 +172,9 @@ projector_parameters = [name for name, _ in model.named_parameters() if "mm_proj
 optimizer_grouped_parameters = [
     {
         "params": [p for n, p in model.named_parameters() if (n in decay_parameters and n not in projector_parameters and n not in unused_parameters and p.requires_grad)],
+        "weight_decay": training_args.weight_decay,
         "lr": training_args.learning_rate,
-        "eps":1e-5,
+        "eps":1e-6,
     },
     {
         "params": [
@@ -181,14 +182,15 @@ optimizer_grouped_parameters = [
         ],
         "weight_decay": 0.0,
         "lr": training_args.learning_rate,
-        "eps":1e-5
+        "eps":1e-6
     },
     {
         "params": [
             p for n, p in model.named_parameters() if (n in decay_parameters and n in projector_parameters and n not in unused_parameters and p.requires_grad)
         ],
+        "weight_decay": training_args.weight_decay,
         "lr": training_args.learning_rate,
-        "eps":1e-5
+        "eps":1e-6
     },
     {
         "params": [
@@ -196,7 +198,7 @@ optimizer_grouped_parameters = [
         ],
         "weight_decay": 0.0,
         "lr": training_args.learning_rate,
-        "eps":1e-5
+        "eps":1e-6
     },
 ]
 optimizer = torch.optim.AdamW(optimizer_grouped_parameters)
@@ -223,19 +225,21 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
     for batch_idx, batch in enumerate(dataloader):
         with torch.autocast('cuda', dtype=torch.float16):
             if model_args.head_args['head_type'] == 'Diffusion':
-                loss, predicted_action = model.forward_action(
+                loss, predicted_action = model.forward(
                     input_ids=batch['input_ids'].to(device_id),
                     images=batch['pixel_values'].to(device_id),
                     attention_mask=batch['attention_mask'].to(device_id),
-                    action=batch['action'].to(device_id)
+                    action=batch['action'].to(device_id),
+                    chat=False
                 )
                 with torch.no_grad():
                     action_loss = loss_fn(predicted_action, batch['action'].to(device_id)) # * model.args.action_dim
             else:
-                predicted_action = model.forward_action(
+                predicted_action = model.forward(
                     input_ids=batch['input_ids'].to(device_id),
                     images=batch['pixel_values'].to(device_id),
-                    attention_mask=batch['attention_mask'].to(device_id)
+                    attention_mask=batch['attention_mask'].to(device_id),
+                    chat=False
                 )
                 loss = loss_fn(predicted_action, batch['action'].to(device_id)) # * model.args.action_dim
             # print(loss.item())

@@ -73,10 +73,11 @@ class VLAModel:
         # Input
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
         with torch.inference_mode():
-            action = self.model.forward_action(
+            action = self.model.forward(
                 input_ids=input_ids,
                 images=images_tensor,
                 use_cache=True,
+                chat=False
             )
         action = action.cpu().numpy()[0]
         action = self.unnorm_action(unnorm_key, action)
