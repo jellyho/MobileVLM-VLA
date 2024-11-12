@@ -30,7 +30,7 @@ class VLAModel:
     def inference_prompt(self, image, prompt, max_new_tokens=100):
         images = [image]
         images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=torch.float16)
-        conv = conv_templates[self.args.conv_mode].copy()
+        conv = conv_templates['v1'].copy()
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
@@ -42,8 +42,8 @@ class VLAModel:
             output_ids = self.model.generate(
                 input_ids,
                 images=images_tensor,
-                do_sample=False,
-                temperature=0,
+                do_sample=True,
+                temperature=1.0,
                 top_p=None,
                 num_beams=1,
                 max_new_tokens=max_new_tokens,
