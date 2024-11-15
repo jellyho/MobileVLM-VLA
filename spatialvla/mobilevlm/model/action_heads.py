@@ -64,13 +64,14 @@ class MAPHead(nn.Module):
     def forward(self, x, mask=None):
         batch_size, l, d = x.shape
 
-        p = self.p.expand(batch_size, -1, -1)  # Expand probe to match batch size
+        p = self.p.expand(batch_size, -1, -1).contiguous()  # Expand probe to match batch size
 
         if mask is not None:
             mask = mask.unsqueeze(1)  # Expand for multihead attention compatibility
 
         # Multihead Attention with the probe
         out, _ = self.attention(p, x, x, key_padding_mask=mask)
+        out = out.contiguous()
 
         # Apply LayerNorm and MLP Block
         y = self.layer_norm(out)
@@ -87,6 +88,7 @@ class MlpBlock(nn.Module):
     
     def forward(self, x):
         x = F.gelu(self.fc1(x))
+        x = x.contiguous()
         x = self.fc2(x)
         return x
 

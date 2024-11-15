@@ -47,27 +47,21 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         self.post_init()  # Initialize weights and apply final processing
 
         # NLP Head Version
-        if config.head_args['head_type'] == 'MLP':
-            self.action_head = MLPHead(config.hidden_size, config.head_args['action_hidden_sizes'], config.action_dim * config.action_len)
-        elif config.head_args['head_type'] == 'MAP':
-            self.action_head = ContinuousActionHead(config.hidden_size, config.action_dim * config.action_len, config.head_args['num_heads'])
-        elif config.head_args['head_type'] == 'Diffusion':
-            self.action_head = DiffusionActionHead(
-                config.hidden_size,
-                config.action_len,
-                config.action_dim,
-                config.head_args['max_action'],
-                config.head_args['loss_type'],
-                config.head_args['time_dim'],
-                config.head_args['num_blocks'],
-                config.head_args['dropout_rate'],
-                config.head_args['hidden_dim'],
-                config.head_args['use_layer_norm'],
-                config.head_args['n_diffusion_samples']
-            )
-
-        self.action_head.to()
-    
+        if config.head_args:
+            if config.head_args['head_type'] == 'MLP':
+                self.action_head = MLPHead(config.hidden_size, config.head_args['action_hidden_sizes'], config.action_dim * config.action_len)
+            elif config.head_args['head_type'] == 'MAP':
+                self.action_head = ContinuousActionHead(config.hidden_size, config.action_dim * config.action_len, config.head_args['num_heads'])
+            elif config.head_args['head_type'] == 'Diffusion':
+                self.action_head = DiffusionActionHead(
+                    config.head_args,
+                    config.hidden_size,
+                    config.action_len,
+                    config.action_dim
+                )
+        else:
+            self.action_head = False
+        
     def get_model(self):
         return self.model
 
@@ -82,8 +76,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         output_hidden_states: Optional[bool] = False,
         images: Optional[torch.FloatTensor] = None,
         return_dict: Optional[bool] = True,
-        chat: Optional[bool] = True,
-        action = None
+        actions = None,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states)
@@ -106,35 +99,25 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             return_dict=return_dict
         )
         loss = None
-        hidden = outputs[0]
+        hidden = outputs[0].contiguous()
         if self.config.head_args['hidden_projection'] == 'last':
-            action_hidden = hidden[:, -1] # [batch, dim]
+            action_hidden = hidden[:, -1].contiguous() # [batch, dim]
         elif self.config.head_args['hidden_projection'] == 'mean':
             action_hidden = torch.mean(hidden, axis=1)
         elif self.config.head_args['hidden_projection'] == 'pass':
             action_hidden = hidden # [batch, token_num, dim]
         
-        if action is not None:
-            loss = self.action_head.loss(action_hidden, action)
+        if actions is not None: # Maybe diffusion
+            loss = self.action_head.loss(action_hidden, actions)
             with torch.no_grad():
                 predicted_action = self.action_head.predict_action(action_hidden)
+                predicted_action = predicted_action.reshape(-1, self.config.action_len, self.config.action_dim)
             return loss, predicted_action
 
         predicted_action = self.action_head(action_hidden)
         predicted_action = predicted_action.reshape(-1, self.config.action_len, self.config.action_dim)
 
-        if not chat:
-            return predicted_action
-        else:
-            logits = self.lm_head(hidden_states)
-            return CausalLMOutputWithAction(
-                loss=loss,
-                logits=logits,
-                past_key_values=outputs.past_key_values,
-                hidden_states=outputs.hidden_states,
-                attentions=outputs.attentions,
-                action=predicted_action
-            )
+        return predicted_action
 
         
 class MobileLlamaForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
@@ -182,7 +165,7 @@ class MobileLlamaForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             return_dict=return_dict
         )
 
-        hidden_states = outputs[0]
+        hidden_states = outputs[0].contiguous()
         logits = self.lm_head(hidden_states)
 
         loss = None

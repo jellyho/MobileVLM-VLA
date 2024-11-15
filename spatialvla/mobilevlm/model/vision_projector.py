@@ -30,9 +30,9 @@ class LDPBlock(nn.Module):
         b, num_tokens, c = x.shape
         h = int(math.sqrt(num_tokens))
         x = self.mlp(x) 
-        x = x.permute(0, 2, 1).reshape(b, -1, h, h)
+        x = x.permute(0, 2, 1).contiguous().reshape(b, -1, h, h).contiguous()
         x = self.mb_block(x)
-        x = x.flatten(2).permute(0, 2, 1)
+        x = x.flatten(2).permute(0, 2, 1).contiguous()
         return x
 
 class FeatureIRLayer(nn.Module):
@@ -56,7 +56,7 @@ class TokenDownLayer(nn.Module):
         b, num_tokens, c = x.shape
         h = int(math.sqrt(num_tokens))
         assert h * h == num_tokens
-        x = x.permute(0, 2, 1).reshape(b, -1, h, h)
+        x = x.permute(0, 2, 1).contiguous().reshape(b, -1, h, h).contiguous()
         x = self.dwn(x)
         x = x.flatten(2).transpose(1, 2)
         return x
@@ -73,9 +73,9 @@ class PosInjectLayer(nn.Module):
         b, num_tokens, c = x.shape
         h = int(math.sqrt(num_tokens))
         assert h * h == num_tokens
-        cnn_feat = x.transpose(1, 2).view(b, c, h, h)
+        cnn_feat = x.transpose(1, 2).contiguous().view(b, c, h, h).contiguous()
         x = self.peg(cnn_feat) + cnn_feat
-        x = x.flatten(2).transpose(1, 2)
+        x = x.flatten(2).transpose(1, 2).contiguous()
         return x
 
 class LDPNetProjector(nn.Module):

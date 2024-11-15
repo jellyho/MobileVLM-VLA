@@ -4,23 +4,9 @@ import torch.nn.functional as F
 import numpy as np
 from einops import rearrange
 from typing import Dict, Optional, Tuple
+from spatialvla.mobilevlm.model.action_heads import MAPHead
 
 ############## Pytorch Version of Octo Diffusion Head #################
-def init_weights(m):
-    """Initialize weights for the model layers."""
-    if isinstance(m, nn.Linear):
-        # Xavier initialization for linear layers
-        nn.init.xavier_normal_(m.weight)
-        if m.bias is not None:
-            nn.init.zeros_(m.bias)
-    elif isinstance(m, nn.LayerNorm):
-        # Initialize LayerNorm weights
-        nn.init.ones_(m.weight)
-        nn.init.zeros_(m.bias)
-    elif isinstance(m, nn.Parameter):
-        # For learnable parameters
-        nn.init.normal_(m, mean=0.0, std=0.02)
-
 def cosine_beta_schedule(timesteps, s=0.008):
     steps = timesteps + 1
     t = torch.linspace(0, timesteps, steps) / timesteps
@@ -39,11 +25,9 @@ class FourierFeatures(nn.Module):
             self.kernel = nn.Parameter(
                 torch.randn(1, output_size // 2), requires_grad=True
             )
-            # init_weights(self.kernel)
 
     def forward(self, x):
         if self.learnable:
-            # print(x.device, self.kernel.device)
             f = 2.0 * np.pi * torch.matmul(x.float(), self.kernel).float()
         else:
             half_dim = self.output_size // 2
@@ -51,7 +35,7 @@ class FourierFeatures(nn.Module):
             f = torch.exp(torch.arange(half_dim) * -f).to(x.device)
             f = x.float() * f
             f = f.float()
-        return torch.cat([torch.cos(f).half(), torch.sin(f).half()], dim=-1)
+        return torch.cat([torch.cos(f).half(), torch.sin(f).half()], dim=-1).float()
 
 
 class MLP(nn.Module):
@@ -71,10 +55,8 @@ class MLP(nn.Module):
                 layers.append(activation)
                 
         self.mlp = nn.Sequential(*layers)
-        # self.mlp.apply()
 
     def forward(self, x):
-        # print(x.shape)
         return self.mlp(x)
 
 
@@ -88,10 +70,6 @@ class MLPResNetBlock(nn.Module):
         self.dense1 = nn.Linear(features, features * 4)
         self.dense2 = nn.Linear(features * 4, features)
         self.dense_residual = nn.Linear(features, features)
-
-        # init_weights(self.dense1)
-        # init_weights(self.dense2)
-        # init_weights(self.dense_residual)
 
     def forward(self, x):
         residual = x
@@ -115,10 +93,6 @@ class MLPResNet(nn.Module):
         self.out_dense = nn.Linear(hidden_dim, out_dim)
         self.activation = activation
 
-        # init_weights(self.in_dense)
-        # self.layers.apply(init_weights)
-        # init_weights(self.out_dense)
-
     def forward(self, x):
         x = self.in_dense(x)
         for layer in self.layers:
@@ -141,8 +115,6 @@ class ScoreActor(nn.Module):
         self.cond_encoder = cond_encoder
         self.reverse_network = reverse_network
 
-        # self.apply(init_weights)
-
     def forward(self, obs_enc, actions, time):
         # print(obs_enc.dtype, actions.dtype, time.dtype)
         t_ff = self.time_preprocess(time.float()) # Input : N, B, 1, Output : N, B, time_dim
@@ -154,24 +126,23 @@ class ScoreActor(nn.Module):
 
 
 class DiffusionActionHead(nn.Module):
-    def __init__(self, in_dim=2048, action_len=1, action_dim=7, max_action=5.0,
-                 loss_type="mse", time_dim=32, num_blocks=3, dropout_rate=0.0, hidden_dim=256,
-                 use_layer_norm=True, diffusion_steps=20, n_diffusion_samples=1):
+    def __init__(self, head_args, in_dim=2048, action_len=1, action_dim=7):
         super().__init__()
         self.action_len = action_len
         self.action_dim = action_dim
-        self.max_action = max_action
-        self.loss_type = loss_type
-        self.time_dim = time_dim
-        self.num_blocks = num_blocks
-        self.dropout_rate = dropout_rate
-        self.hidden_dim = hidden_dim
-        self.use_layer_norm = use_layer_norm
-        self.diffusion_steps = diffusion_steps
-        self.n_diffusion_samples = n_diffusion_samples
+        self.max_action = head_args['max_action']
+        self.loss_type = head_args['loss_type']
+        self.time_dim = head_args['time_dim']
+        self.num_blocks = head_args['num_blocks']
+        self.dropout_rate = head_args['dropout_rate']
+        self.hidden_dim = head_args['hidden_dim']
+        self.use_layer_norm = head_args['use_layer_norm']
+        self.diffusion_steps = head_args['diffusion_steps']
+        self.n_diffusion_samples = head_args['n_diffusion_samples']
+        self.use_map = head_args['use_map']
 
         self.diffusion_model = create_diffusion_model(
-            obs_dim=in_dim, 
+            obs_dim=self.hidden_dim, 
             out_dim=self.action_dim * self.action_len,
             time_dim=self.time_dim,
             num_blocks=self.num_blocks,
@@ -180,12 +151,13 @@ class DiffusionActionHead(nn.Module):
             use_layer_norm=self.use_layer_norm,
         )
 
+        if self.use_map:
+            self.map = MAPHead(in_dim, num_heads=1, num_readouts=1)
+            self.proj = nn.Linear(in_dim, self.hidden_dim)
         betas = cosine_beta_schedule(self.diffusion_steps).float()
         self.betas = betas
         self.alphas = 1 - betas
         self.alpha_hats = torch.cumprod(self.alphas, dim=0)
-
-        # self.apply(init_weights)
 
     def forward(self, embeddings, time=None, noisy_actions=None):
         if time is None or noisy_actions is None:
@@ -200,6 +172,10 @@ class DiffusionActionHead(nn.Module):
     # No window size
     def loss(self, embeddings, actions):
         # size of embeddings will be [Batch, embedding_size]
+        if self.use_map:
+            embeddings = self.map(embeddings)
+            embeddings = embeddings.squeeze(1)
+            embeddings = self.proj(embeddings)
         batch_size, embeddings_size = embeddings.shape
         actions_flat = rearrange(actions, "b h a -> b (h a)")
         actions_flat = actions_flat.clamp(-self.max_action, self.max_action)
@@ -210,14 +186,13 @@ class DiffusionActionHead(nn.Module):
         scale = torch.sqrt(self.alpha_hats[time]).to(actions_flat.device)
         std = torch.sqrt(1 - self.alpha_hats[time]).to(actions_flat.device)
         noisy_actions = scale * actions_flat.unsqueeze(0) + std * noise
-
-        pred_eps = self(embeddings, time=time.to(actions_flat.half().device), noisy_actions=noisy_actions)
+        pred_eps = self(embeddings, time=time.to(actions_flat.device), noisy_actions=noisy_actions)
 
         loss = F.mse_loss(pred_eps, noise, reduction="none")
-        loss = loss.sum()
+        loss = loss.mean()
         return loss
 
-    def predict_action(self, embeddings, num_denoise_steps=None):
+    def predict_action(self, embeddings, num_denoise_steps=None, return_history=False):
         """
         Predict the action from the given embeddings using denoising steps.
 
@@ -228,19 +203,25 @@ class DiffusionActionHead(nn.Module):
         Returns:
             Tensor: Predicted denoised actions of shape (Batch, action_len * action_dim)
         """
+        if self.use_map:
+            embeddings = self.map(embeddings)
+            embeddings = embeddings.squeeze(1)
+            embeddings = self.proj(embeddings)
         num_denoise_steps = num_denoise_steps or self.diffusion_steps
         batch_size = embeddings.shape[0]
         action_shape = (batch_size, self.action_len * self.action_dim)
 
         # Start with pure noise as the initial noisy action
         noisy_actions = torch.randn(action_shape, device=embeddings.device)
+        if return_history:
+            hist = []
+            hist.append(noisy_actions)
         with torch.autocast(device_type='cuda', dtype=torch.float16):
             for step in reversed(range(num_denoise_steps)):
                 # Get alpha, beta, and sqrt(1 - alpha_hat) for current step
-                alpha_hat = self.alpha_hats[step]
-                beta_t = self.betas[step]
-                sqrt_alpha_hat = torch.sqrt(alpha_hat)
-                sqrt_one_minus_alpha_hat = torch.sqrt(1 - alpha_hat)
+                alpha_1 = 1 / torch.sqrt(self.alphas[step])
+                alpha_2 = (1 - self.alphas[step]) / (torch.sqrt(1 - self.alpha_hats[step]))
+                beta = self.betas[step]
 
                 # Prepare time tensor for this specific step
                 time_tensor = torch.full((batch_size, 1), step, device=embeddings.device, dtype=torch.long)
@@ -249,13 +230,16 @@ class DiffusionActionHead(nn.Module):
                 pred_eps = self.diffusion_model(embeddings, noisy_actions, time_tensor)
 
                 # Remove the predicted noise to get a less noisy estimate of the action
-                noisy_actions = (noisy_actions - sqrt_one_minus_alpha_hat * pred_eps) / sqrt_alpha_hat
-
+                noisy_actions = alpha_1 * (noisy_actions - alpha_2 * pred_eps)
+                if return_history:
+                    hist.append(noisy_actions)
                 # Optional noise addition for non-final steps
                 if step > 0:
                     noise = torch.randn_like(noisy_actions)
-                    noisy_actions = noisy_actions + torch.sqrt(beta_t) * noise
+                    noisy_actions = noisy_actions + torch.sqrt(beta) * noise
 
         # Clamp the final prediction to the max action range
         predicted_actions = noisy_actions.clamp(-self.max_action, self.max_action)
+        if return_history:
+            return predicted_actions, hist
         return predicted_actions

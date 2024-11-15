@@ -84,7 +84,7 @@ class MobileVLMMetaForCausalLM(ABC):
 
     def encode_images(self, images):
         image_features = self.get_model().get_vision_tower()(images)
-        image_features = self.get_model().mm_projector(image_features)
+        image_features = self.get_model().mm_projector(image_features).contiguous()
         return image_features
 
     def prepare_inputs_labels_for_multimodal(
@@ -392,10 +392,12 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda"):
 
     model.get_model().mm_projector.to(device=device, dtype=torch.float16)
 
-    model.action_head.to(device)
+    dataset_statistics = None
+
+    if model.action_head:
+        model.action_head.to(device)
+        dataset_statistics = load_statistics_from_json(model_path)
 
     image_processor = vision_tower.image_processor
-
-    dataset_statistics = load_statistics_from_json(model_path)
 
     return tokenizer, model, image_processor, dataset_statistics

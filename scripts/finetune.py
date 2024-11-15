@@ -9,6 +9,7 @@ import logging
 import pathlib
 from tqdm import tqdm
 import transformers
+from transformers import get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
 from transformers.trainer import ALL_LAYERNORM_LAYERS, get_parameter_names
 from PIL import Image
 from accelerate import PartialState
@@ -114,11 +115,6 @@ if training_args.gradient_checkpointing:
             output.requires_grad_(True)
         model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
-print('LoRA applied to ', find_all_linear_names(model))
-projector_modules = find_all_names_from_module(model, 'mm_projector')
-action_head_modules = find_all_names_from_module(model, 'action_head')
-print(projector_modules)
-print(action_head_modules)
 ## LORA SETTING
 if training_args.lora_enable:
     from peft import LoraConfig, get_peft_model
@@ -129,7 +125,6 @@ if training_args.lora_enable:
         lora_dropout=training_args.lora_dropout,
         bias=training_args.lora_bias,
         init_lora_weights="gaussian",
-        modules_to_save=projector_modules + action_head_modules,
         use_rslora=training_args.use_rslora
     )
     if training_args.bits == 16:
@@ -157,10 +152,10 @@ if training_args.bits in [4, 8]:
                 if training_args.bf16 and module.weight.dtype == torch.float32:
                     module = module.to(torch.bfloat16)
 
-# for p in model.get_model().mm_projector.parameters():
-#     p.requires_grad = True
-# for p in model.action_head.parameters():
-#     p.requires_grad = True
+for p in model.get_model().mm_projector.parameters():
+    p.requires_grad = True
+for p in model.action_head.parameters():
+    p.requires_grad = True
 model.print_trainable_parameters()
 print('LoRA Loaded')
 
@@ -174,7 +169,7 @@ optimizer_grouped_parameters = [
         "params": [p for n, p in model.named_parameters() if (n in decay_parameters and n not in projector_parameters and n not in unused_parameters and p.requires_grad)],
         "weight_decay": training_args.weight_decay,
         "lr": training_args.learning_rate,
-        "eps":1e-6,
+        "eps":training_args.adamw_eps,
     },
     {
         "params": [
@@ -182,7 +177,7 @@ optimizer_grouped_parameters = [
         ],
         "weight_decay": 0.0,
         "lr": training_args.learning_rate,
-        "eps":1e-6
+        "eps":training_args.adamw_eps
     },
     {
         "params": [
@@ -190,7 +185,7 @@ optimizer_grouped_parameters = [
         ],
         "weight_decay": training_args.weight_decay,
         "lr": training_args.learning_rate,
-        "eps":1e-6
+        "eps":training_args.adamw_eps
     },
     {
         "params": [
@@ -198,11 +193,16 @@ optimizer_grouped_parameters = [
         ],
         "weight_decay": 0.0,
         "lr": training_args.learning_rate,
-        "eps":1e-6
+        "eps":training_args.adamw_eps
     },
 ]
 optimizer = torch.optim.AdamW(optimizer_grouped_parameters)
-
+if training_args.lr_schedule == 'linear':
+    warmup_steps = int(training_args.max_steps * training_args.warmup_ratio)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=training_args.max_steps)
+elif training_args.lr_schedule == 'cosine':
+    warmup_steps = int(training_args.max_steps * training_args.warmup_ratio)
+    scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=training_args.max_steps)
 # loss_fn = MSELoss()
 # loss_fn = L1Loss()
 loss_fn = SmoothL1Loss()
@@ -229,8 +229,7 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                     input_ids=batch['input_ids'].to(device_id),
                     images=batch['pixel_values'].to(device_id),
                     attention_mask=batch['attention_mask'].to(device_id),
-                    action=batch['action'].to(device_id),
-                    chat=False
+                    actions=batch['action'].to(device_id),
                 )
                 with torch.no_grad():
                     action_loss = loss_fn(predicted_action, batch['action'].to(device_id)) # * model.args.action_dim
@@ -239,13 +238,11 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                     input_ids=batch['input_ids'].to(device_id),
                     images=batch['pixel_values'].to(device_id),
                     attention_mask=batch['attention_mask'].to(device_id),
-                    chat=False
                 )
                 loss = loss_fn(predicted_action, batch['action'].to(device_id)) # * model.args.action_dim
             # print(loss.item())
         normalized_loss = loss / training_args.gradient_accumulation_steps
         normalized_loss.backward()
-
         # Compute gradient step index
         gradient_step_idx = batch_idx // training_args.gradient_accumulation_steps
 
@@ -279,7 +276,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                     "grad/mean": mean_grad,
                     "grad/norm": global_norm,
                     "action_loss": action_loss.item(),  # Log loss globally as well
-                    "eps_loss" : loss.item()
+                    "eps_loss" : loss.item(),
+                    'learning_rate': scheduler.get_last_lr()[0] if training_args.lr_schedule != 'constant' else training_args.learning_rate
                 },
                 step=gradient_step_idx             
                 )
@@ -288,7 +286,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                     "grad/max": max_grad,
                     "grad/mean": mean_grad,
                     "grad/norm": global_norm,
-                    "action_loss": loss.item(),  # Log loss globally as well
+                    "action_loss": loss.item(),
+                    'learning_rate': scheduler.get_last_lr()[0] if training_args.lr_schedule != 'constant' else training_args.learning_rate # Log loss globally as well
                 },
                 step=gradient_step_idx             
                 )
@@ -297,6 +296,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
         if (batch_idx + 1) % training_args.gradient_accumulation_steps == 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=training_args.gradient_clip)
             optimizer.step()
+            if training_args.lr_schedule != 'constant':
+                scheduler.step() 
             optimizer.zero_grad()
             progress.update()
 
@@ -316,8 +317,9 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
 
             dist.barrier()
 
-        if gradient_step_idx == training_args.max_steps:
+        if gradient_step_idx >= training_args.max_steps:
             print(f"Max step {training_args.max_steps} reached! Stopping training...")
+            break
            
 
 # Save configs and state_dicts into temp dir

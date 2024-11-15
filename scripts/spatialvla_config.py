@@ -21,13 +21,14 @@ MAPHead = {
 
 DiffusionHead = {
     'head_type': 'Diffusion',
-    'hidden_projection': 'mean',
+    'hidden_projection': 'pass',
+    'use_map' : True,
     'max_action': 5.0,
     'loss_type': 'mse',
     'time_dim':  32,
     'num_blocks': 3,
     'dropout_rate': 0.0,
-    'hidden_dim': 256,
+    'hidden_dim': 1024,
     'use_layer_norm':True,
     'diffusion_steps': 20,
     'n_diffusion_samples': 1,
@@ -75,8 +76,11 @@ class TrainingArguments(transformers.TrainingArguments):
     max_steps: int = field(default=50000)  
     save_steps: int = field(default=500)
     learning_rate: float = field(default=1e-4)
-    gradient_clip: float = field(default=0.3)
-    weight_decay: float = field(default=0.1)
+    lr_schedule: str = field(default='constant')
+    warmup_ratio: float = field(default=0.06)
+    gradient_clip: float = field(default=1.0)
+    weight_decay: float = field(default=0.01)
+    adamw_eps: float= field(default=1e-5)
     gradient_accumulation_steps: int = field(default=1)
     mm_projector_lr: Optional[float] = None
 

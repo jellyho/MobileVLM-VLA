@@ -45,7 +45,7 @@ class RLDSBatchTransform:
 
     def __call__(self, rlds_batch: Dict[str, Any]) -> Dict[str, Any]:
         """Converts a RLDS batch to the format expected by the OpenVLA collator/models."""
-        dataset_name, action = rlds_batch["dataset_name"], torch.Tensor(rlds_batch["action"]).to(torch.float16)
+        dataset_name, action = rlds_batch["dataset_name"], torch.Tensor(np.array(rlds_batch["action"])).to(torch.float16)
         imgs = []
         for img in rlds_batch["observation"]["image_primary"]:
             imgs.append(Image.fromarray(img))
