@@ -14,15 +14,15 @@ srun --gres=gpu:$1 torchrun --standalone --rdzv_id=$SLURM_JOB_ID --master_port=$
     --use_rslora false \
     --weight_decay 0.01 \
     --data_root_dir "/home/shared/rlds_datasets" \
-    --data_mix "lg_cup_color_rightarm" \
-    --output_dir "checkpoints/cup_color_rightarm_dp" \
+    --data_mix "libero_object_no_noops" \
+    --output_dir "checkpoints/libero_object_dp5_eps1e5" \
     --gradient_clip 1.0 \
-    --gradient_accumulation_steps 8 \
+    --gradient_accumulation_steps 4 \
     --adamw_eps 1e-5 \
     --action_head "Diffusion" \
     --action_dim 7 \
-    --action_len 8 \
-    --max_steps 50000 \
+    --action_len 5 \
+    --max_steps 20000 \
     --save_steps 500 \
     --shuffle_buffer_size 10000 \
     --batch_size 32 \

@@ -46,7 +46,6 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         self.config = config
         self.post_init()  # Initialize weights and apply final processing
 
-        # NLP Head Version
         if config.head_args:
             if config.head_args['head_type'] == 'MLP':
                 self.action_head = MLPHead(config.hidden_size, config.head_args['action_hidden_sizes'], config.action_dim * config.action_len)
@@ -115,6 +114,42 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             return loss, predicted_action
 
         predicted_action = self.action_head(action_hidden)
+        predicted_action = predicted_action.reshape(-1, self.config.action_len, self.config.action_dim)
+
+        return predicted_action
+
+    def predict_action(self
+            input_ids: torch.LongTensor = None,
+            attention_mask: Optional[torch.Tensor] = None,
+            past_key_values: Optional[List[torch.FloatTensor]] = None,
+            inputs_embeds: Optional[torch.FloatTensor] = None,
+            labels: Optional[torch.LongTensor] = None,
+            use_cache: Optional[bool] = None,
+            images: Optional[torch.FloatTensor] = None,
+    ):
+        input_ids, attention_mask, past_key_values, inputs_embeds, labels = \
+            self.prepare_inputs_labels_for_multimodal(input_ids, attention_mask, past_key_values, labels, images)
+
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+        )        
+
+        hidden = outputs[0].contiguous()
+        if self.config.head_args['hidden_projection'] == 'last':
+            action_hidden = hidden[:, -1].contiguous() # [batch, dim]
+        elif self.config.head_args['hidden_projection'] == 'mean':
+            action_hidden = torch.mean(hidden, axis=1)
+        elif self.config.head_args['hidden_projection'] == 'pass':
+            action_hidden = hidden # [batch, token_num, dim]
+        
+        if self.config.head_args['head_type'] == 'Diffusion': # Maybe diffusion
+            predicted_action = self.action_head.predict_action(action_hidden)
+        else:
+            predicted_action = self.action_head(action_hidden)
         predicted_action = predicted_action.reshape(-1, self.config.action_len, self.config.action_dim)
 
         return predicted_action
