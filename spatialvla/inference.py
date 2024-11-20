@@ -14,9 +14,10 @@ from spatialvla.mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKE
 
 
 class VLAModel:
-    def __init__(self, model_path):
+    def __init__(self, model_path, dtype=torch.bfloat16):
         disable_torch_init()
-        self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_vla(model_path=model_path)
+        self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_vla(model_path=model_path, dtype=dtype)
+        self.dtype = dtype
         # self.tokenizer, self.model, self.image_processor, _ = load_pretrained_model(model_path)
 
     def unnorm_action(self, unnorm_key, action):
@@ -30,7 +31,7 @@ class VLAModel:
 
     def inference_prompt(self, image, prompt, max_new_tokens=100):
         images = [image]
-        images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=torch.float16)
+        images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=self.dtype)
         conv = conv_templates['v1'].copy()
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
@@ -65,7 +66,7 @@ class VLAModel:
     def inference_action(self, unnorm_key, image, prompt):
         images = [image]
         # Check whether this process_images is same as dataset
-        images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=torch.float16)
+        images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=self.dtype)
         prompt = f'What action should the robot take to {prompt}?'
 
         conv = conv_templates['v1'].copy() # Hard-coded

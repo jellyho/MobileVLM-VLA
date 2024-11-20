@@ -40,14 +40,16 @@ class MAPHead(nn.Module):
 
     Conversion of the original JAX implementation from octo for PyTorch
     """
-    def __init__(self, input_dim, mlp_dim=None, num_heads=8, num_readouts=1):
+    def __init__(self, input_dim, mlp_dim=None, num_heads=8, max_action=5.0, use_tanh=False, num_readouts=1):
         super(MAPHead, self).__init__()
         
         self.num_heads = num_heads
         self.num_readouts = num_readouts
         self.input_dim = input_dim
         self.mlp_dim = mlp_dim if mlp_dim is not None else 4 * input_dim
-
+        self.use_tanh = use_tanh
+        self.max_action = max_action
+        self.tanh = nn.Tanh()
         # Multihead Attention layer
         self.attention = nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, batch_first=True)
 
@@ -76,6 +78,9 @@ class MAPHead(nn.Module):
         # Apply LayerNorm and MLP Block
         y = self.layer_norm(out)
         out = out + self.mlp_block(y)
+
+        if self.use_tanh:
+            out = self.tanh(out / self.max_action) * self.max_action 
         return out
 
 

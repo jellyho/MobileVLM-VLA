@@ -9,7 +9,7 @@ import logging
 import pathlib
 from tqdm import tqdm
 import transformers
-from transformers import get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
+from transformers import get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup, get_scheduler
 from transformers.trainer import ALL_LAYERNORM_LAYERS, get_parameter_names
 from PIL import Image
 from accelerate import PartialState
@@ -55,12 +55,17 @@ model_args.head_args = HEAD_ARGS[model_args.action_head]
 ## Load Pretrained VLM
 load_4bit = training_args.bits == 4
 load_8bit = training_args.bits == 8
+if training_args.bf16:
+    dtype = torch.bfloat16
+if training_args.fp16:
+    dtype = torch.float16
 
 tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
     model_args, 
     load_8bit, 
     load_4bit,
     device=device_id,
+    dtype=dtype
 )
 model.config.use_cache = False
 model = model.to(device_id)
@@ -160,43 +165,45 @@ model.print_trainable_parameters()
 print('LoRA Loaded')
 
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
-decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
-decay_parameters = [name for name in decay_parameters if "bias" not in name]
-unused_parameters = [name for name, _ in model.named_parameters() if "vision_tower" in name and "layers" not in name]
-projector_parameters = [name for name, _ in model.named_parameters() if "mm_projector" in name]
-optimizer_grouped_parameters = [
-    {
-        "params": [p for n, p in model.named_parameters() if (n in decay_parameters and n not in projector_parameters and n not in unused_parameters and p.requires_grad)],
-        "weight_decay": training_args.weight_decay,
-        "lr": training_args.learning_rate,
-        "eps":training_args.adamw_eps,
-    },
-    {
-        "params": [
-            p for n, p in model.named_parameters() if (n not in decay_parameters and n not in projector_parameters and n not in unused_parameters and p.requires_grad)
-        ],
-        "weight_decay": 0.0,
-        "lr": training_args.learning_rate,
-        "eps":training_args.adamw_eps
-    },
-    {
-        "params": [
-            p for n, p in model.named_parameters() if (n in decay_parameters and n in projector_parameters and n not in unused_parameters and p.requires_grad)
-        ],
-        "weight_decay": training_args.weight_decay,
-        "lr": training_args.learning_rate,
-        "eps":training_args.adamw_eps
-    },
-    {
-        "params": [
-            p for n, p in model.named_parameters() if (n not in decay_parameters and n in projector_parameters and n not in unused_parameters and p.requires_grad)
-        ],
-        "weight_decay": 0.0,
-        "lr": training_args.learning_rate,
-        "eps":training_args.adamw_eps
-    },
-]
-optimizer = torch.optim.AdamW(optimizer_grouped_parameters)
+# decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
+# decay_parameters = [name for name in decay_parameters if "bias" not in name]
+# unused_parameters = [name for name, _ in model.named_parameters() if "vision_tower" in name and "layers" not in name]
+# projector_parameters = [name for name, _ in model.named_parameters() if "mm_projector" in name]
+# optimizer_grouped_parameters = [
+#     {
+#         "params": [p for n, p in model.named_parameters() if (n in decay_parameters and n not in projector_parameters and n not in unused_parameters and p.requires_grad)],
+#         "weight_decay": training_args.weight_decay,
+#         "lr": training_args.learning_rate,
+#         "eps":training_args.adamw_eps,
+#     },
+#     {
+#         "params": [
+#             p for n, p in model.named_parameters() if (n not in decay_parameters and n not in projector_parameters and n not in unused_parameters and p.requires_grad)
+#         ],
+#         "weight_decay": 0.0,
+#         "lr": training_args.learning_rate,
+#         "eps":training_args.adamw_eps
+#     },
+#     {
+#         "params": [
+#             p for n, p in model.named_parameters() if (n in decay_parameters and n in projector_parameters and n not in unused_parameters and p.requires_grad)
+#         ],
+#         "weight_decay": training_args.weight_decay,
+#         "lr": training_args.learning_rate,
+#         "eps":training_args.adamw_eps
+#     },
+#     {
+#         "params": [
+#             p for n, p in model.named_parameters() if (n not in decay_parameters and n in projector_parameters and n not in unused_parameters and p.requires_grad)
+#         ],
+#         "weight_decay": 0.0,
+#         "lr": training_args.learning_rate,
+#         "eps":training_args.adamw_eps
+#     },
+# ]
+# optimizer = torch.optim.AdamW(optimizer_grouped_parameters)
+trainable_params = [param for param in model.parameters() if param.requires_grad]
+optimizer = torch.optim.AdamW(trainable_params, lr=training_args.learning_rate, eps=training_args.adamw_eps, weight_decay=training_args.weight_decay)
 if training_args.lr_schedule == 'linear':
     warmup_steps = int(training_args.max_steps * training_args.warmup_ratio)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=training_args.max_steps)
@@ -223,7 +230,7 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
     model.train()
     optimizer.zero_grad()
     for batch_idx, batch in enumerate(dataloader):
-        with torch.autocast('cuda', dtype=torch.float16):
+        with torch.autocast('cuda', dtype=dtype):
             if model_args.head_args['head_type'] == 'Diffusion':
                 loss, predicted_action = model.forward(
                     input_ids=batch['input_ids'].to(device_id),
@@ -323,9 +330,9 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
            
 
 # Save configs and state_dicts into temp dir
-model.config.save_pretrained(temp_dir)
-state_dict = get_peft_state_maybe_zero_3(model.named_parameters(), training_args.lora_bias)
-non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.named_parameters())
+model.module.config.save_pretrained(temp_dir)
+state_dict = get_peft_state_maybe_zero_3(model.module.named_parameters(), training_args.lora_bias)
+non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.module.named_parameters())
 model.save_pretrained(temp_dir, state_dict=state_dict)
 torch.save(non_lora_state_dict, os.path.join(temp_dir, 'non_lora_trainables.bin'))
 

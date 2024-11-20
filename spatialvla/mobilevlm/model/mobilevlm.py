@@ -122,7 +122,7 @@ class MobileVLMMetaForCausalLM(ABC):
                     new_labels.append(labels[batch_idx])
                 cur_image_idx += 1
                 continue
-            image_token_indices = torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0]
+            image_token_indices = torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0] # Image token indices
             cur_new_input_embeds = []
             if labels is not None:
                 cur_labels = labels[batch_idx]
@@ -131,7 +131,7 @@ class MobileVLMMetaForCausalLM(ABC):
             while image_token_indices.numel() > 0:
                 cur_image_features = image_features[cur_image_idx]
                 image_token_start = image_token_indices[0]
-                if getattr(self.config, 'tune_mm_mlp_adapter', False) and getattr(self.config, 'mm_use_im_start_end', False):
+                if getattr(self.config, 'tune_mm_mlp_adapter', False) and getattr(self.config, 'mm_use_im_start_end', False): # false by default
                     cur_new_input_embeds.append(self.get_model().embed_tokens(cur_input_ids[:image_token_start-1]).detach())
                     cur_new_input_embeds.append(self.get_model().embed_tokens(cur_input_ids[image_token_start-1:image_token_start]))
                     cur_new_input_embeds.append(cur_image_features)
@@ -250,7 +250,7 @@ class MobileVLMMetaForCausalLM(ABC):
                 for p in self.get_output_embeddings().parameters():
                     p.requires_grad = False
 
-def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda"):
+def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", dtype=torch.float16):
 
     from spatialvla.mobilevlm.model.mobilellama import MobileLlamaForCausalLM
 
@@ -262,12 +262,12 @@ def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_m
         kwargs['load_in_4bit'] = True
         kwargs['quantization_config'] = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_compute_dtype=dtype,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type='nf4'
         )
     else:
-        kwargs['torch_dtype'] = torch.float16
+        kwargs['torch_dtype'] = dtype
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
     model = MobileLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
@@ -285,7 +285,7 @@ def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_m
         vision_tower.load_image_processor()
     elif not vision_tower.is_loaded:
         vision_tower.load_model()
-    vision_tower.to(device=device, dtype=torch.float16)
+    vision_tower.to(device=device, dtype=dtype)
     image_processor = vision_tower.image_processor
 
     if hasattr(model.config, "max_sequence_length"):
@@ -295,7 +295,7 @@ def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_m
     
     return tokenizer, model, image_processor, context_len
 
-def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, device="cuda"):
+def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, device="cuda", dtype=torch.float16):
     from spatialvla.mobilevlm.model.mobilellama import SpatialVLAForCausalLM, SpatialVLAConfig
     model_path = model_args.model_path
     # kwargs = {"device_map": device_map}
@@ -307,13 +307,13 @@ def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, de
         kwargs['load_in_4bit'] = True
         kwargs['quantization_config'] = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_compute_dtype=dtype,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type='nf4'
         )
     else:
-        kwargs['torch_dtype'] = torch.float16
-
+        kwargs['torch_dtype'] = dtype
+    print('Loading with', dtype)
     # Init models
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
     config = SpatialVLAConfig.from_pretrained(model_path)
@@ -338,7 +338,7 @@ def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, de
         vision_tower.load_image_processor()
     elif not vision_tower.is_loaded:
         vision_tower.load_model()
-    vision_tower.to(device=device, dtype=torch.float16)
+    vision_tower.to(device=device, dtype=dtype)
     image_processor = vision_tower.image_processor
 
     if hasattr(model.config, "max_sequence_length"):
@@ -346,13 +346,13 @@ def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, de
     else:
         context_len = 2048
 
-    model.get_model().mm_projector.to(device=device, dtype=torch.float16)
+    model.get_model().mm_projector.to(device=device, dtype=dtype)
 
     model.action_head.to(device)
     
     return tokenizer, model, image_processor, context_len
 
-def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda"):
+def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda", dtype=torch.float16):
     from spatialvla.mobilevlm.model.mobilellama import SpatialVLAForCausalLM, SpatialVLAConfig
 
     # kwargs = {"device_map": device_map}
@@ -364,12 +364,12 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda"):
         kwargs['load_in_4bit'] = True
         kwargs['quantization_config'] = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_compute_dtype=dtype,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type='nf4'
         )
     else:
-        kwargs['torch_dtype'] = torch.float16
+        kwargs['torch_dtype'] = dtype
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
     model = SpatialVLAForCausalLM.from_pretrained(model_path)
@@ -388,14 +388,14 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda"):
         vision_tower.load_image_processor()
     elif not vision_tower.is_loaded:
         vision_tower.load_model()
-    vision_tower.to(device=device, dtype=torch.float16)
+    vision_tower.to(device=device, dtype=dtype)
 
-    model.get_model().mm_projector.to(device=device, dtype=torch.float16)
+    model.get_model().mm_projector.to(device=device, dtype=dtype)
 
     dataset_statistics = None
 
     if model.action_head:
-        model.action_head.to(device)
+        model.action_head.to(device=device)
         dataset_statistics = load_statistics_from_json(model_path)
 
     image_processor = vision_tower.image_processor

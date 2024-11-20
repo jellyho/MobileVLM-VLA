@@ -7,17 +7,17 @@ from typing import Dict, Optional, Tuple
 from spatialvla.mobilevlm.model.action_heads import MAPHead
 
 ############## Pytorch Version of Octo Diffusion Head #################
-def cosine_beta_schedule(timesteps, s=0.008):
+def cosine_beta_schedule(timesteps, s=0.008, dtype=torch.float16):
     steps = timesteps + 1
     t = torch.linspace(0, timesteps, steps) / timesteps
     alphas_cumprod = torch.cos(((t + s) / (1 + s) * np.pi * 0.5).float()) ** 2
     alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
     betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
-    return torch.clip(betas, 0, 0.999).half()
+    return torch.clip(betas, 0, 0.999).to(dtype=dtype)
 
 
 class FourierFeatures(nn.Module):
-    def __init__(self, output_size, learnable=True):
+    def __init__(self, output_size, learnable=True, dtype=torch.float16):
         super().__init__()
         self.output_size = output_size
         self.learnable = learnable
@@ -25,6 +25,7 @@ class FourierFeatures(nn.Module):
             self.kernel = nn.Parameter(
                 torch.randn(1, output_size // 2), requires_grad=True
             )
+        self.dtype = dtype
 
     def forward(self, x):
         if self.learnable:
@@ -35,7 +36,7 @@ class FourierFeatures(nn.Module):
             f = torch.exp(torch.arange(half_dim) * -f).to(x.device)
             f = x.float() * f
             f = f.float()
-        return torch.cat([torch.cos(f).half(), torch.sin(f).half()], dim=-1).float()
+        return torch.cat([torch.cos(f).to(dtype=self.dtype), torch.sin(f).to(dtype=self.dtype)], dim=-1).float()
 
 
 class MLP(nn.Module):
@@ -100,20 +101,22 @@ class MLPResNet(nn.Module):
         return self.out_dense(self.activation(x))
 
 
-def create_diffusion_model(obs_dim, out_dim, time_dim, num_blocks, dropout_rate, hidden_dim, use_layer_norm):
+def create_diffusion_model(obs_dim, out_dim, time_dim, num_blocks, dropout_rate, hidden_dim, use_layer_norm, dtype):
     return ScoreActor(
-        FourierFeatures(time_dim, learnable=True),
+        FourierFeatures(time_dim, learnable=True, dtype=dtype),
         MLP(time_dim, [2 * time_dim, time_dim]),
-        MLPResNet(num_blocks, (obs_dim + time_dim + out_dim), out_dim, dropout_rate, hidden_dim, use_layer_norm=use_layer_norm)
+        MLPResNet(num_blocks, (obs_dim + time_dim + out_dim), out_dim, dropout_rate, hidden_dim, use_layer_norm=use_layer_norm),
+        dtype=dtype
     )
 
 
 class ScoreActor(nn.Module):
-    def __init__(self, time_preprocess, cond_encoder, reverse_network):
+    def __init__(self, time_preprocess, cond_encoder, reverse_network, dtype=torch.float16):
         super().__init__()
         self.time_preprocess = time_preprocess
         self.cond_encoder = cond_encoder
         self.reverse_network = reverse_network
+        self.dtype = dtype
 
     def forward(self, obs_enc, actions, time):
         # print(obs_enc.dtype, actions.dtype, time.dtype)
@@ -126,7 +129,7 @@ class ScoreActor(nn.Module):
 
 
 class DiffusionActionHead(nn.Module):
-    def __init__(self, head_args, in_dim=2048, action_len=1, action_dim=7):
+    def __init__(self, head_args, in_dim=2048, action_len=1, action_dim=7, dtype=torch.float16):
         super().__init__()
         self.action_len = action_len
         self.action_dim = action_dim
@@ -140,6 +143,7 @@ class DiffusionActionHead(nn.Module):
         self.diffusion_steps = head_args['diffusion_steps']
         self.n_diffusion_samples = head_args['n_diffusion_samples']
         self.use_map = head_args['use_map']
+        self.dtype = dtype
 
         self.diffusion_model = create_diffusion_model(
             obs_dim=self.hidden_dim, 
@@ -149,6 +153,7 @@ class DiffusionActionHead(nn.Module):
             dropout_rate=self.dropout_rate,
             hidden_dim=self.hidden_dim,
             use_layer_norm=self.use_layer_norm,
+            dtype = self.dtype
         )
 
         if self.use_map:
@@ -192,7 +197,7 @@ class DiffusionActionHead(nn.Module):
         loss = loss.mean()
         return loss
 
-    def predict_action(self, embeddings, num_denoise_steps=None, return_history=False):
+    def predict_action(self, embeddings, num_denoise_steps=None, return_history=False, dtype=torch.float16):
         """
         Predict the action from the given embeddings using denoising steps.
 
@@ -216,7 +221,7 @@ class DiffusionActionHead(nn.Module):
         if return_history:
             hist = []
             hist.append(noisy_actions)
-        with torch.autocast(device_type='cuda', dtype=torch.float16):
+        with torch.autocast(device_type='cuda', dtype=dtype):
             for step in reversed(range(num_denoise_steps)):
                 # Get alpha, beta, and sqrt(1 - alpha_hat) for current step
                 alpha_1 = 1 / torch.sqrt(self.alphas[step])

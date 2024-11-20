@@ -10,6 +10,7 @@ import tqdm
 from libero.libero import benchmark
 from PIL import Image
 import wandb
+import torch
 
 # Append current directory so that interpreter can find experiments.robot
 # sys.path.append("../..")
@@ -144,42 +145,36 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Starting episode {task_episodes+1}...")
             log_file.write(f"Starting episode {task_episodes+1}...\n")
             while t < max_steps + cfg.num_steps_wait:
-                try:
-                    # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
-                    # and we need to wait for them to fall
-                    if t < cfg.num_steps_wait:
-                        obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
-                        t += 1
-                        continue
-
-                    # Get preprocessed image
-                    img = get_libero_image(obs, resize_size)
-
-                    # Save preprocessed image for replay video
-                    replay_images.append(img)
-
-                    # Query model to get action
-                    action = model.inference_action(f'{cfg.task_name}_no_noops', Image.fromarray(img), task_description)[0]
-
-                    # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
-                    action = normalize_gripper_action(action, binarize=True)
-
-                    # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
-                    # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
-                    action = invert_gripper_action(action)
-
-                    # Execute action in environment
-                    obs, reward, done, info = env.step(action.tolist())
-                    if done:
-                        task_successes += 1
-                        total_successes += 1
-                        break
+                # IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects
+                # and we need to wait for them to fall
+                if t < cfg.num_steps_wait:
+                    obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
                     t += 1
+                    continue
 
-                except Exception as e:
-                    print(f"Caught exception: {e}")
-                    log_file.write(f"Caught exception: {e}\n")
+                # Get preprocessed image
+                img = get_libero_image(obs, resize_size)
+
+                # Save preprocessed image for replay video
+                replay_images.append(img)
+
+                # Query model to get action
+                action = model.inference_action(f'{cfg.task_name}_no_noops', Image.fromarray(img), task_description)[0]
+
+                # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
+                action = normalize_gripper_action(action, binarize=True)
+
+                # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
+                # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
+                action = invert_gripper_action(action)
+
+                # Execute action in environment
+                obs, reward, done, info = env.step(action.tolist())
+                if done:
+                    task_successes += 1
+                    total_successes += 1
                     break
+                t += 1
 
             task_episodes += 1
             total_episodes += 1

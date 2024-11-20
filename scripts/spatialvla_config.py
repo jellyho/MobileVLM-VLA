@@ -16,9 +16,12 @@ MLPHead = {
 MAPHead = {
     'head_type': 'MAP',
     'num_heads': 8,
-    'hidden_projection': 'pass'
+    'hidden_projection': 'pass',
+    'max_action': 5.0,
+    'use_tanh': True
 }
 
+# Diffusion
 DiffusionHead = {
     'head_type': 'Diffusion',
     'hidden_projection': 'pass',
@@ -28,7 +31,7 @@ DiffusionHead = {
     'time_dim':  32,
     'num_blocks': 3,
     'dropout_rate': 0.0,
-    'hidden_dim': 1024,
+    'hidden_dim': 256,
     'use_layer_norm':True,
     'diffusion_steps': 20,
     'n_diffusion_samples': 1,
@@ -69,6 +72,8 @@ class TrainingArguments(transformers.TrainingArguments):
     lora_bias: str = "none"
 
     # Training
+    bf16: bool = field(default=True)
+    fp16: bool = field(default=False)
     seed = 42
     batch_size: int = field(default=32)
     shuffle_buffer_size: int = field(default=10000)
