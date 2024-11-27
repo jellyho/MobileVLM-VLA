@@ -11,8 +11,8 @@ from spatialvla.mobilevlm.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM
 
 def merge_lora(model_base, model_path, save_path):
 
-    kwargs = {"device_map": "auto", "torch_dtype": torch.float16}
-
+    # kwargs = {"device_map": "auto", "torch_dtype": torch.bfloat16}
+    kwargs = {}
     lora_cfg_pretrained = AutoConfig.from_pretrained(model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
     # Loading weight from base model

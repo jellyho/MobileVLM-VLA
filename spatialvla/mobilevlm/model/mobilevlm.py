@@ -204,6 +204,10 @@ class MobileVLMMetaForCausalLM(ABC):
                 attention_mask = torch.cat((new_attn_mask_pad_left, attention_mask), dim=1)
                 assert attention_mask.shape == new_input_embeds.shape[:2]
 
+        # ignore 0 indexing
+        if attention_mask is not None:
+            new_input_embeds[~attention_mask] = 0.0
+
         return None, attention_mask, past_key_values, new_input_embeds, new_labels
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):
@@ -250,7 +254,7 @@ class MobileVLMMetaForCausalLM(ABC):
                 for p in self.get_output_embeddings().parameters():
                     p.requires_grad = False
 
-def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", dtype=torch.float16):
+def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", dtype=torch.bfloat16):
 
     from spatialvla.mobilevlm.model.mobilellama import MobileLlamaForCausalLM
 
@@ -295,7 +299,7 @@ def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_m
     
     return tokenizer, model, image_processor, context_len
 
-def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, device="cuda", dtype=torch.float16):
+def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, device="cuda", dtype=torch.bfloat16):
     from spatialvla.mobilevlm.model.mobilellama import SpatialVLAForCausalLM, SpatialVLAConfig
     model_path = model_args.model_path
     # kwargs = {"device_map": device_map}
@@ -352,7 +356,7 @@ def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, de
     
     return tokenizer, model, image_processor, context_len
 
-def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda", dtype=torch.float16):
+def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda", dtype=torch.bfloat16):
     from spatialvla.mobilevlm.model.mobilellama import SpatialVLAForCausalLM, SpatialVLAConfig
 
     # kwargs = {"device_map": device_map}

@@ -49,9 +49,24 @@ class ActionEncoding(IntEnum):
     EEF_R6 = 4              # EEF Delta XYZ (3) + R6 (6) + Gripper Open/Close (1)
     # fmt: on
 
+vla_benchmark_config = {
+    "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
+    "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+    "state_obs_keys": ["joint_pos"],
+    "state_encoding": StateEncoding.POS_EULER,
+    "action_encoding": ActionEncoding.EEF_POS,
+}
 
 # === Individual Dataset Configs ===
 OXE_DATASET_CONFIGS = {
+    'bm_move_bowl': vla_benchmark_config,
+    'bm_move_tape': vla_benchmark_config,
+    'bm_pick_bottle_basket': vla_benchmark_config,
+    'bm_pick_bottle_stand': vla_benchmark_config,
+    'bm_pick_tape': vla_benchmark_config,
+    'bm_stack_bowls': vla_benchmark_config,
+    'bm_upright_mug': vla_benchmark_config,
+    'bm_upright_screwdriver': vla_benchmark_config,
     "lg_upright_cup_joint": { #NOTE dataset config for onearm sim
         "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},

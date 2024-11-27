@@ -5,9 +5,10 @@ import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaModel, LlamaForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
+from diffusers.schedulers.scheduling_ddpm import DDPMScheduler 
 from spatialvla.mobilevlm.model.mobilevlm import MobileVLMMetaModel, MobileVLMMetaForCausalLM
 from spatialvla.mobilevlm.model.action_heads import MLPHead, ContinuousActionHead, MAPHead
-from spatialvla.mobilevlm.model.diffusion_heads import DiffusionActionHead
+from spatialvla.mobilevlm.model.diffusion_heads import DiffusionActionHead, DiffusionPolicyHead, DiTModules
 
 class MobileVLMConfig(LlamaConfig):
     model_type = "mobilevlm"
@@ -45,7 +46,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.config = config
         self.post_init()  # Initialize weights and apply final processing
-        print('Action head to', self.model.dtype)
+
         if config.head_args:
             if config.head_args['head_type'] == 'MLP':
                 self.action_head = MLPHead(config.hidden_size, config.head_args['action_hidden_sizes'], config.action_dim * config.action_len)
@@ -59,6 +60,22 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                     config.action_dim,
                     self.model.dtype
                 )
+            elif config.head_args['head_type'] == 'DiffusionPolicy':
+                self.action_head = DiffusionPolicyHead(
+                    config.head_args,
+                    config.hidden_size,
+                    config.action_len,
+                    config.action_dim,
+                    self.model.dtype
+                )
+            elif config.head_args['head_type'] == 'DiT':
+                self.action_head = DiTModules(
+                    config.action_dim, 
+                    config.action_len, 
+                    config.hidden_size, 
+                    config.head_args
+                )
+
         else:
             self.action_head = False
         
@@ -76,7 +93,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         output_hidden_states: Optional[bool] = False,
         images: Optional[torch.FloatTensor] = None,
         return_dict: Optional[bool] = True,
-        actions = None,
+        actions: Optional[torch.Tensor] = None,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states)
@@ -85,6 +102,10 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         # [batch, input_ids] this may have
         input_ids, attention_mask, past_key_values, inputs_embeds, labels = \
             self.prepare_inputs_labels_for_multimodal(input_ids, attention_mask, past_key_values, labels, images)
+
+        if self.config.head_args['head_type'] == 'DiT':
+            input_ids, attention_mask, past_key_values, inputs_embeds, labels, time_enc, noise = \
+            self.action_head.prepare_inputs_for_DiT_training(actions, input_ids, attention_mask, past_key_values, inputs_embeds, labels)
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.model(
@@ -97,8 +118,10 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict
         )
-        loss = None
+
         hidden = outputs[0].contiguous()
+
+        # Token aggregation
         if self.config.head_args['hidden_projection'] == 'last':
             action_hidden = hidden[:, -1].contiguous() # [batch, dim]
         elif self.config.head_args['hidden_projection'] == 'mean':
@@ -106,17 +129,16 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         elif self.config.head_args['hidden_projection'] == 'pass':
             action_hidden = hidden # [batch, token_num, dim]
         
-        if actions is not None: # Maybe diffusion
+        # Action decoding
+        if self.config.head_args['head_type'] in ['Diffusion', 'DiffusionPolicy']:
             loss = self.action_head.loss(action_hidden, actions)
-            with torch.no_grad():
-                predicted_action = self.action_head.predict_action(action_hidden)
-                predicted_action = predicted_action.reshape(-1, self.config.action_len, self.config.action_dim)
-            return loss, predicted_action
-
-        predicted_action = self.action_head(action_hidden)
-        predicted_action = predicted_action.reshape(-1, self.config.action_len, self.config.action_dim)
-
-        return predicted_action
+        elif self.config.head_args['head_type'] == 'DiT':
+            loss = self.action_head.loss(action_hidden, time_enc, noise)
+        else: #MLP, MAP
+            predicted_action = self.action_head(action_hidden)
+            predicted_action = predicted_action.reshape(-1, self.config.action_len, self.config.action_dim)
+            loss = nn.functional.mse_loss(actions, predicted_action, reduction='mean')
+        return loss
 
     def predict_action(self,
         input_ids: torch.LongTensor = None,
@@ -126,30 +148,63 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         labels: Optional[torch.LongTensor] = None,
         use_cache: Optional[bool] = None,
         images: Optional[torch.FloatTensor] = None,
+        num_denoise_steps: Optional[int] = None,
     ):
+        # Prepare denoising step for DiT
+        batch_size = input_ids.shape[0]
+        if self.config.head_args['head_type'] == 'DiT':
+            num_denoise_steps = num_denoise_steps or self.action_head.diffusion_steps
+            action_shape = (batch_size, self.config.action_len, self.config.action_dim)
+            noisy_actions = torch.randn(action_shape, device=input_ids.device)
+            self.action_head.scheduler.set_timesteps(num_denoise_steps)
+            step_iterator = self.action_head.scheduler.timesteps
+
+        loop_num =  num_denoise_steps if self.config.head_args['head_type'] == 'DiT' else 1
+
         input_ids, attention_mask, past_key_values, inputs_embeds, labels = \
-            self.prepare_inputs_labels_for_multimodal(input_ids, attention_mask, past_key_values, labels, images)
-
-        outputs = self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-        )        
-
-        hidden = outputs[0].contiguous()
-        if self.config.head_args['hidden_projection'] == 'last':
-            action_hidden = hidden[:, -1].contiguous() # [batch, dim]
-        elif self.config.head_args['hidden_projection'] == 'mean':
-            action_hidden = torch.mean(hidden, axis=1)
-        elif self.config.head_args['hidden_projection'] == 'pass':
-            action_hidden = hidden # [batch, token_num, dim]
+                self.prepare_inputs_labels_for_multimodal(input_ids, attention_mask, past_key_values, labels, images)
         
-        if self.config.head_args['head_type'] == 'Diffusion': # Maybe diffusion
-            predicted_action = self.action_head.predict_action(action_hidden)
-        else:
-            predicted_action = self.action_head(action_hidden)
+        for i in range(loop_num):
+            if self.config.head_args['head_type'] == 'DiT':
+                step = step_iterator[i]
+                timesteps = torch.full((batch_size,), step, device=inputs_embeds.device, dtype=torch.long)
+                new_input_ids, new_attention_mask, past_key_values, new_inputs_embeds, new_labels, time_enc = \
+                self.action_head.prepare_inputs_for_DiT_evaluate(noisy_actions, timesteps, input_ids, attention_mask, past_key_values, inputs_embeds, labels)
+
+                outputs = self.model(
+                    input_ids=new_input_ids,
+                    attention_mask=new_attention_mask,
+                    past_key_values=past_key_values,
+                    inputs_embeds=new_inputs_embeds,
+                    use_cache=use_cache,
+                )       
+            else:
+                outputs = self.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    past_key_values=past_key_values,
+                    inputs_embeds=inputs_embeds,
+                    use_cache=use_cache,
+                )    
+
+            hidden = outputs[0].contiguous()
+
+            if self.config.head_args['hidden_projection'] == 'last':
+                action_hidden = hidden[:, -1].contiguous() # [batch, dim]
+            elif self.config.head_args['hidden_projection'] == 'mean':
+                action_hidden = torch.mean(hidden, axis=1)
+            elif self.config.head_args['hidden_projection'] == 'pass':
+                action_hidden = hidden # [batch, token_num, dim]
+            
+            if self.config.head_args['head_type'] in ['Diffusion', 'DiffusionPolicy']: # Maybe diffusion
+                predicted_action = self.action_head.predict_action(action_hidden)
+            elif self.config.head_args['head_type'] == 'DiT':
+                # Denoising Process
+                noisy_actions = self.action_head.denoise_action(noisy_actions, action_hidden, step, time_enc)
+                predicted_action = noisy_actions
+            else:
+                predicted_action = self.action_head(action_hidden)
+
         predicted_action = predicted_action.reshape(-1, self.config.action_len, self.config.action_dim)
 
         return predicted_action

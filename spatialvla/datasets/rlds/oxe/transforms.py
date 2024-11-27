@@ -1021,6 +1021,14 @@ def libero_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 
 # === Registry ===
 OXE_STANDARDIZATION_TRANSFORMS = {
+    'bm_move_bowl': lg_delta_ee_transform,
+    'bm_move_tape': lg_delta_ee_transform,
+    'bm_pick_bottle_basket': lg_delta_ee_transform,
+    'bm_pick_bottle_stand': lg_delta_ee_transform,
+    'bm_pick_tape': lg_delta_ee_transform,
+    'bm_stack_bowls': lg_delta_ee_transform,
+    'bm_upright_mug': lg_delta_ee_transform,
+    'bm_upright_screwdriver': lg_delta_ee_transform,
     'lg_upright_cup' : lg_delta_ee_transform,
     'lg_upright_cup_ee' : lg_ee_pos_transform,
     'lg_upright_cup_joint' : lg_joint_pos_transform,

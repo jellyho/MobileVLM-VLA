@@ -48,6 +48,7 @@ class GenerateConfig:
     task_name: str = "libero_spatial"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim
     num_trials_per_task: int = 50                    # Number of rollouts per task
+    action_len: int = 1
 
     #################################################################################################################
     # Utils
@@ -104,6 +105,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
     # Start evaluation
     total_episodes, total_successes = 0, 0
+    action_counter = 0
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         # Get task
         task = task_suite.get_task(task_id)
@@ -127,7 +129,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
             # Set initial states
             obs = env.set_init_state(initial_states[episode_idx])
-
+            action_counter = 0
             # Setup
             t = 0
             replay_images = []
@@ -159,9 +161,11 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 replay_images.append(img)
 
                 # Query model to get action
-                action = model.inference_action(f'{cfg.task_name}_no_noops', Image.fromarray(img), task_description)[0]
-
+                if action_counter == 0:
+                    action_chunk = model.inference_action(f'{cfg.task_name}_no_noops', Image.fromarray(img), task_description)
+                
                 # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
+                action = action_chunk[action_counter]
                 action = normalize_gripper_action(action, binarize=True)
 
                 # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
@@ -175,6 +179,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     total_successes += 1
                     break
                 t += 1
+                action_counter += 1
+                if action_counter == cfg.action_len:
+                    action_counter = 0
 
             task_episodes += 1
             total_episodes += 1
