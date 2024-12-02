@@ -1,5 +1,5 @@
 from typing import List, Optional, Tuple, Union
-
+import time
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
@@ -75,7 +75,6 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                     config.hidden_size, 
                     config.head_args
                 )
-
         else:
             self.action_head = False
         
@@ -153,7 +152,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         # Prepare denoising step for DiT
         batch_size = input_ids.shape[0]
         if self.config.head_args['head_type'] == 'DiT':
-            num_denoise_steps = num_denoise_steps or self.action_head.diffusion_steps
+            num_denoise_steps = num_denoise_steps or (self.action_head.diffusion_steps if self.config.head_args['sched'] == 'DDPM' else self.action_head.diffusion_steps // 10)
             action_shape = (batch_size, self.config.action_len, self.config.action_dim)
             noisy_actions = torch.randn(action_shape, device=input_ids.device)
             self.action_head.scheduler.set_timesteps(num_denoise_steps)
@@ -177,7 +176,18 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                     past_key_values=past_key_values,
                     inputs_embeds=new_inputs_embeds,
                     use_cache=use_cache,
-                )       
+                )
+                
+                if use_cache and past_key_values is None:
+                    pkv = outputs.past_key_values
+                    sliced_kv = []
+                    n_tokens = 1 + self.config.action_len
+                    for layer_kv in pkv:
+                        keys, values = layer_kv
+                        sliced_keys = keys[:, :, :-n_tokens, :]  # Slicing the last n_tokens
+                        sliced_values = values[:, :, :-n_tokens, :]  # Slicing the last n_tokens
+                        sliced_kv.append((sliced_keys, sliced_values))
+                    past_key_values = tuple(sliced_kv)
             else:
                 outputs = self.model(
                     input_ids=input_ids,
@@ -199,7 +209,6 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             if self.config.head_args['head_type'] in ['Diffusion', 'DiffusionPolicy']: # Maybe diffusion
                 predicted_action = self.action_head.predict_action(action_hidden)
             elif self.config.head_args['head_type'] == 'DiT':
-                # Denoising Process
                 noisy_actions = self.action_head.denoise_action(noisy_actions, action_hidden, step, time_enc)
                 predicted_action = noisy_actions
             else:

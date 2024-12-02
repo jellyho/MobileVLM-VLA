@@ -79,6 +79,7 @@ class RLDSDataset(IterableDataset):
         image_aug: bool = False,
         window_size = 1,
         future_action_window_size=0,
+        enable_autotune=False
     ) -> None:
         """Lightweight wrapper around RLDS TFDS Pipeline for use with PyTorch/OpenVLA Data Loaders."""
         self.data_root_dir, self.data_mix, self.batch_transform = data_root_dir, data_mix, batch_transform
@@ -119,6 +120,7 @@ class RLDSDataset(IterableDataset):
             traj_transform_threads=len(mixture_spec),
             traj_read_threads=len(mixture_spec),
             train=train,
+            enable_autotune=enable_autotune
         )
 
         # If applicable, enable image augmentations

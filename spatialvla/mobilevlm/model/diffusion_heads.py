@@ -6,8 +6,8 @@ from einops import rearrange
 from typing import Dict, Optional, Tuple
 from spatialvla.mobilevlm.model.action_heads import MAPHead
 from spatialvla.mobilevlm.model.conditional_unet1d import ConditionalUnet1D
-from diffusers.schedulers.scheduling_ddpm import DDPMScheduler 
-
+from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 ############## Pytorch Version of Octo Diffusion Head #################
 def cosine_beta_schedule(timesteps, s=0.008, dtype=torch.bfloat16):
     steps = timesteps + 1
@@ -438,16 +438,28 @@ class DiTModules(nn.Module):
         self.eps_net = EpsLayer(embed_size, action_dim)
         self.diffusion_steps = head_args['diffusion_steps']
 
-        self.scheduler = DDPMScheduler(
-            num_train_timesteps=self.diffusion_steps,
-            beta_start=0.0001,
-            beta_end=0.02,
-            beta_schedule='squaredcos_cap_v2',
-            variance_type='fixed_samll',
-            clip_sample=True,
-            clip_sample_range=head_args['max_action'],
-            prediction_type='epsilon'
-        )
+        if head_args['sched'] == 'DDPM':
+            self.scheduler = DDPMScheduler(
+                num_train_timesteps=self.diffusion_steps,
+                beta_start=0.0001,
+                beta_end=0.02,
+                beta_schedule='squaredcos_cap_v2',
+                variance_type='fixed_small',
+                clip_sample=True,
+                clip_sample_range=head_args['max_action'],
+                prediction_type='epsilon'
+            )
+        elif head_args['sched'] == 'DDIM':
+            self.scheduler = DDIMScheduler(
+                num_train_timesteps=self.diffusion_steps,
+                beta_start=0.0001,
+                beta_end=0.02,
+                beta_schedule='squaredcos_cap_v2',
+                clip_sample=True,
+                clip_sample_range=head_args['max_action'],
+                prediction_type='epsilon',
+                set_alpha_to_one=True
+            )
 
         self.action_dim = action_dim
         self.action_len = action_len
@@ -483,10 +495,6 @@ class DiTModules(nn.Module):
             [inputs_embeds, torch.zeros((B, DiT_tokens.shape[1], embed_dim), device=inputs_embeds.device, dtype=inputs_embeds.dtype)],
             dim=1
         )
-
-        # # Batch index tensor for fast scatter update
-        # batch_idx = torch.arange(B, device=inputs_embeds.device).unsqueeze(1)  # Shape: (B, 1)
-
         # Scatter update attention mask and inputs_embeds
         indices = valid_lengths + torch.arange(DiT_tokens.shape[1], device=inputs_embeds.device).unsqueeze(0)  # Offset per batch
         new_attention_mask.scatter_(1, indices, 1)  # Scatter updates valid tokens in the extended attention mask
@@ -505,26 +513,25 @@ class DiTModules(nn.Module):
         DiT_tokens = torch.cat([time_token, noisy_actions_token], dim=1)  # Add time_token as the first token
 
         # Calculate the lengths and expand attention mask
+        if attention_mask is None:
+            attention_mask = torch.ones((B, inputs_embeds.shape[1]), device=inputs_embeds.device, dtype=torch.long)
         valid_lengths = attention_mask.sum(dim=1, keepdim=True)  # Shape: (B, 1)
+        indices = valid_lengths + torch.arange(DiT_tokens.shape[1], device=inputs_embeds.device).unsqueeze(0)
 
         new_attention_mask = torch.cat(
             [attention_mask, torch.zeros((B, DiT_tokens.shape[1]), device=attention_mask.device, dtype=attention_mask.dtype)],
-            dim=1
-        )
+            dim=1)
+        new_attention_mask.scatter_(1, indices, 1)  # Scatter updates valid tokens in the extended attention mask
+
+        if past_key_values is not None: # Cached
+            new_inputs_embeds = DiT_tokens
+            return input_ids, new_attention_mask, past_key_values, new_inputs_embeds, labels, time_enc
 
         # Expand inputs_embeds and insert DiT_tokens
         new_inputs_embeds = torch.cat(
             [inputs_embeds, torch.zeros((B, DiT_tokens.shape[1], embed_dim), device=inputs_embeds.device, dtype=inputs_embeds.dtype)],
-            dim=1
-        )
-
-        # # Batch index tensor for fast scatter update
-        # batch_idx = torch.arange(B, device=inputs_embeds.device).unsqueeze(1)  # Shape: (B, 1)
-
-        # Scatter update attention mask and inputs_embeds
-        indices = valid_lengths + torch.arange(DiT_tokens.shape[1], device=inputs_embeds.device).unsqueeze(0)  # Offset per batch
-        new_attention_mask.scatter_(1, indices, 1)  # Scatter updates valid tokens in the extended attention mask
-        new_inputs_embeds.scatter_(1, indices.unsqueeze(-1).expand(-1, -1, embed_dim), DiT_tokens)
+            dim=1)
+        new_inputs_embeds.scatter_(1, indices.unsqueeze(-1).expand(-1, -1, embed_dim), DiT_tokens)       
 
         return input_ids, new_attention_mask, past_key_values, new_inputs_embeds, labels, time_enc
 
@@ -534,10 +541,9 @@ class DiTModules(nn.Module):
         eps_out = self.eps_net(output_tokens, time_enc)
 
         loss = nn.functional.mse_loss(eps_out, noise, reduction='mean')
-        # loss = loss.sum(1).mean() # Sum over the actions
         return loss
 
-    def denoise_action(self, noisy_actions, action_hidden, step, time_enc, dtype=torch.bfloat16):
+    def denoise_action(self, noisy_actions, action_hidden, step, time_enc):
         output_tokens = action_hidden[:, -self.action_len:, :]
         eps_out = self.eps_net(output_tokens, time_enc)
         noisy_actions = self.scheduler.step(eps_out, step, noisy_actions).prev_sample

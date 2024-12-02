@@ -11,6 +11,7 @@ from libero.libero import benchmark
 from PIL import Image
 import wandb
 import torch
+from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 
 # Append current directory so that interpreter can find experiments.robot
 # sys.path.append("../..")
@@ -75,6 +76,19 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
     # Load model
     model = VLAModel(cfg.checkpoint)
+    print(model.model.device)
+    model.model.action_head.scheduler = DDIMScheduler(
+                num_train_timesteps=100,
+                beta_start=0.0001,
+                beta_end=0.02,
+                beta_schedule='squaredcos_cap_v2',
+                clip_sample=True,
+                clip_sample_range=5.0,
+                prediction_type='epsilon',
+                set_alpha_to_one=True
+            )
+    model.model.action_head.scheduler.set_timesteps(10)
+    
 
     # Initialize local logging
     run_id = f"EVAL-{cfg.task_name}-{DATE_TIME}"

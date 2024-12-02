@@ -9,7 +9,7 @@ from typing import Dict, List, Tuple
 
 # fmt: off
 OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
-    'vla_benchmark' : [
+    'vla_benchmark_saperate' : [
         ('bm_move_bowl', 1.0),
         ('bm_move_tape', 1.0),
         ('bm_pick_bottle_basket', 1.0),

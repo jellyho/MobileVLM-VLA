@@ -462,6 +462,7 @@ def make_interleaved_dataset(
     balance_weights: bool = False,
     traj_transform_threads: Optional[int] = None,
     traj_read_threads: Optional[int] = None,
+    enable_autotune = False
 ) -> dl.DLataset:
     """
     Creates an interleaved dataset from list of dataset configs (kwargs). Returns a dataset of batched frames.
@@ -521,11 +522,13 @@ def make_interleaved_dataset(
     dataset_len = int((np.array(dataset_sizes) / sample_weights)[primary_dataset_indices].max())
 
     # Allocate Threads based on Weights
+    if enable_autotune:
+        traj_transform_threads, traj_read_threads = None, None
     threads_per_dataset = allocate_threads(traj_transform_threads, sample_weights)
     reads_per_dataset = allocate_threads(traj_read_threads, sample_weights)
 
-    print("Threads per Dataset: %s", threads_per_dataset)
-    print("Reads per Dataset: %s", reads_per_dataset)
+    print("Threads per Dataset: ", threads_per_dataset)
+    print("Reads per Dataset: ", reads_per_dataset)
 
     # Construct Datasets
     print("Constructing datasets...")

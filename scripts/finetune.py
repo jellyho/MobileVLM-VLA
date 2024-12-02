@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import wandb
 import os
+import time
 from tqdm import tqdm
 import transformers
 from transformers import get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
@@ -75,7 +76,8 @@ dataset = RLDSDataset(
     shuffle_buffer_size=training_args.shuffle_buffer_size,
     train=True,
     window_size=1,
-    future_action_window_size=model_args.action_len - 1
+    future_action_window_size=model_args.action_len - 1,
+    enable_autotune=training_args.enable_autotune
 )
 
 # sampler = DistributedSampler(dataset)
@@ -90,8 +92,9 @@ dataloader = DataLoader(
     num_workers=0,  # Important =>> Set to 0 if using RLDS; TFDS rolls its own parallelism!
 )
 # Save statistics to a JSON file
-if not os.path.exists(training_args.output_dir):
-    os.makedirs(training_args.output_dir)
+if distributed_state.is_main_process:
+    if not os.path.exists(training_args.output_dir):
+        os.makedirs(training_args.output_dir)
 temp_dir = f'{training_args.output_dir}_tmp'
 
 save_dataset_statistics(dataset.dataset_statistics, training_args.output_dir)
@@ -243,13 +246,17 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
             model.eval()
             with torch.no_grad():
                 with torch.autocast('cuda', dtype=dtype):
+                    start = time.time()
                     predicted_action = model.module.predict_action(
                         input_ids=batch['input_ids'].to(device_id),
                         images=batch['pixel_values'].to(device_id),
                         attention_mask=batch['attention_mask'].to(device_id),
+                        use_cache=True
                     )
+                    prediction_time = float(time.time() - start) / training_args.batch_size
                 action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')
                 log_dict['action_loss'] = action_loss.item()
+                log_dict['pred_time'] = prediction_time
 
         if distributed_state.is_main_process:
             log_dict['loss'] = normalized_loss.item()

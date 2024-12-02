@@ -7,18 +7,19 @@ while :; do
 done
 
 # srun --gres=gpu:$1 
-srun --job-name=VLA_DiT --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/finetune.py \
-    --learning_rate 1e-4 \
+export OMP_NUM_THREADS=8
+srun --job-name=DiT-LB-P --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/finetune.py \
+    --learning_rate 1.414e-4 \
     --lr_scheduler_type "cosine" \
     --warmup_ratio 0.05 \
-    --lora_rank 64 \
-    --lora_alpha 32 \
+    --lora_rank 512 \
+    --lora_alpha 256 \
     --lora_dropout 0.01 \
     --use_rslora false \
-    --weight_decay 1e-6 \
+    --weight_decay 0.0 \
     --data_root_dir "/home/shared/rlds_datasets" \
     --data_mix "libero_object_no_noops" \
-    --output_dir "checkpoints/libero_object_DiT_test" \
+    --output_dir "checkpoints/libero_object_DiT_512_256_DDIM_2gpu" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \
@@ -26,8 +27,9 @@ srun --job-name=VLA_DiT --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_ba
     --action_dim 7 \
     --action_len 8 \
     --max_steps 50000 \
-    --save_steps 500 \
+    --save_steps 1000 \
     --shuffle_buffer_size 10000 \
     --batch_size 32 \
     --image_aug false \
-    --wandb_project "VLA_LIBERO_DiT"
+    --wandb_project "VLA_LIBERO_DiT" \
+    --enable_autotune true

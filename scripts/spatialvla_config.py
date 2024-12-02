@@ -53,9 +53,10 @@ DiT = {
     'hidden_projection': 'pass', # Always pass
     'use_map' : False, # Always False
     'max_action': 5.0,
-    'time_dim': 32,
+    'time_dim': 256,
     'hidden_dim': 256,
-    'diffusion_steps': 20
+    'diffusion_steps': 100,
+    'sched':'DDIM'
 }
 
 HEAD_ARGS = {
@@ -100,10 +101,11 @@ class TrainingArguments(transformers.TrainingArguments):
     seed: int = field(default=42)
     batch_size: int = field(default=32)
     shuffle_buffer_size: int = field(default=10000)
+    enable_autotune: bool = field(default=False)
     image_aug: bool = field(default=False)
     max_steps: int = field(default=50000)  
     save_steps: int = field(default=1000)
-    log_grad: bool = field(default=True)
+    log_grad: bool = field(default=False)
     log_steps: int = field(default=100)
 
     learning_rate: float = field(default=1e-4)

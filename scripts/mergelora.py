@@ -10,14 +10,13 @@ from spatialvla.mobilevlm.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM
 
 
 def merge_lora(model_base, model_path, save_path):
-
-    # kwargs = {"device_map": "auto", "torch_dtype": torch.bfloat16}
-    kwargs = {}
+    # kwargs = {"device_map":"auto", "torch_dtype": torch.bfloat16}
+    kwargs = {"torch_dtype": torch.bfloat16}
     lora_cfg_pretrained = AutoConfig.from_pretrained(model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
     # Loading weight from base model
-    model = SpatialVLAForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
-    print("🔜 Don't worry, we will load vision-tower weight soon later...")
+    model = SpatialVLAForCausalLM.from_pretrained(model_base, config=lora_cfg_pretrained, **kwargs)
+    print("🔜 Don't worry, it will load additional weight soon later...")
     token_num, tokem_dim = model.lm_head.out_features, model.lm_head.in_features
     if model.lm_head.weight.shape[0] != token_num:
         model.lm_head.weight = torch.nn.Parameter(torch.empty(token_num, tokem_dim, device=model.device, dtype=model.dtype))
@@ -43,9 +42,7 @@ def merge_lora(model_base, model_path, save_path):
     if not vision_tower.is_loaded:
         vision_tower.load_model()
     vision_tower.to(device=model.device, dtype=torch.float16)
-    print("✅ The vision-tower is loaded successful!")
-    # save
+    print("✅ All weights are loaded successfully!")
     model.save_pretrained(save_path)
     tokenizer.save_pretrained(save_path)
-
-# merge_lora(sys.argv[1], sys.argv[2], sys.argv[3])
+    print("✅ Checkpoint is saveed successfully!")
