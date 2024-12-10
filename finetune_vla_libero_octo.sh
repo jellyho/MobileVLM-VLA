@@ -22,9 +22,11 @@ srun --job-name=lib_$2 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_bac
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \
-    --action_head "DiffusionPolicy" \
+    --action_head "Diffusion" \
     --action_dim 7 \
     --action_len 8 \
+    --use_state_input true \
+    --state_dim 8 \
     --max_steps 50000 \
     --save_steps 5000 \
     --shuffle_buffer_size 20000 \

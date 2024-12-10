@@ -25,14 +25,14 @@ MAPHead = {
 DiffusionHead = {
     'head_type': 'Diffusion',
     'hidden_projection': 'pass', # If use_map is true, set this to pass
-    'use_map' : True, # Always true
+    'use_map' : False,
     'max_action': 5.0,
-    'time_dim':  32,
+    'time_dim':  256,
     'num_blocks': 3,
     'dropout_rate': 0.0,
     'hidden_dim': 256,
     'use_layer_norm':True,
-    'diffusion_steps': 20,
+    'diffusion_steps': 100,
     'n_diffusion_samples': 1,
 }
 
@@ -74,6 +74,8 @@ class ModelArguments:
     head_args: Dict[str, Any] = field(default_factory=lambda: DiffusionHead) 
     action_dim: int = field(default=7)
     action_len: int = field(default=1)
+    use_state_input: bool = field(default=False)
+    state_dim: int = field(default=8)
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):

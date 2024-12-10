@@ -73,6 +73,7 @@ class RLDSDataset(IterableDataset):
         data_root_dir: Path,
         data_mix: str,
         batch_transform: RLDSBatchTransform,
+        use_state_input: bool = False,
         # resize_resolution: Tuple[int, int] = (336, 336), # resize is done by image processor
         shuffle_buffer_size: int = 256_000,
         train: bool = True,
@@ -98,7 +99,7 @@ class RLDSDataset(IterableDataset):
             mixture_spec,
             load_camera_views=("primary",),
             load_depth=False,
-            load_proprio=False,
+            load_proprio=use_state_input, #TRUERUEUREUREURRUEUER
             load_language=True,
             action_proprio_normalization_type=NormalizationType.NORMAL,
         )

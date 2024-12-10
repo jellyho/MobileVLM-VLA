@@ -151,6 +151,7 @@ def make_dataset_from_rlds(
                 new_obs[f"depth_{new}"] = old_obs[old]
 
         if state_obs_keys:
+            print(state_obs_keys)
             new_obs["proprio"] = tf.concat(
                 [
                     (
@@ -502,6 +503,7 @@ def make_interleaved_dataset(
     dataset_sizes, all_dataset_statistics = [], {}
     for dataset_kwargs in dataset_kwargs_list:
         data_kwargs = copy.deepcopy(dataset_kwargs)
+        print(data_kwargs)
         if "dataset_frame_transform_kwargs" in data_kwargs:
             data_kwargs.pop("dataset_frame_transform_kwargs")
         _, dataset_statistics = make_dataset_from_rlds(**data_kwargs, train=train)

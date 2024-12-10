@@ -2,22 +2,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from einops import rearrange
+from einops import rearrange, repeat
 from typing import Dict, Optional, Tuple
 from spatialvla.mobilevlm.model.action_heads import MAPHead
 from spatialvla.mobilevlm.model.conditional_unet1d import ConditionalUnet1D
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
+
 ############## Pytorch Version of Octo Diffusion Head #################
-def cosine_beta_schedule(timesteps, s=0.008, dtype=torch.bfloat16):
-    steps = timesteps + 1
-    t = torch.linspace(0, timesteps, steps) / timesteps
-    alphas_cumprod = torch.cos(((t + s) / (1 + s) * np.pi * 0.5).float()) ** 2
-    alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-    betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
-    return torch.clip(betas, 0, 0.999).to(dtype=dtype)
-
-
 class FourierFeatures(nn.Module):
     def __init__(self, output_size, learnable=True, dtype=torch.bfloat16):
         super().__init__()
@@ -174,11 +166,11 @@ class ScoreActor(nn.Module):
 
     def forward(self, obs_enc, actions, time):
         # print(obs_enc.dtype, actions.dtype, time.dtype)
-        t_ff = self.time_preprocess(time.float()) # Input : N, B, 1, Output : N, B, time_dim
-        cond_enc = self.cond_encoder(t_ff) # Input : N, B, time_dim, Output: N, B, time_dim
-        if len(cond_enc.shape) == 3: # training time
-            obs_enc = obs_enc.unsqueeze(0).expand(cond_enc.shape[0], obs_enc.shape[0], -1) # Input : B, embedding_size, Output : N, B, embeding_size
-        reverse_input = torch.cat([cond_enc, obs_enc, actions], dim=-1) # N, B, (time_dim + embedding_size + L*A)
+        t_ff = self.time_preprocess(time.float()) # Input : BL, 1, Output : BL, time_dim
+        cond_enc = self.cond_encoder(t_ff) # Input : BL, time_dim, Output: BL, time_dim
+        # obs_enc = obs_enc.unsqueeze(0).expand(cond_enc.shape[0], obs_enc.shape[0], -1) # Input : BL, embedding_size, Output : N, B, embeding_size
+        # print(cond_enc.shape, obs_enc.shape, actions.shape)
+        reverse_input = torch.cat([cond_enc, obs_enc, actions], dim=-1) # BL, (time_dim + embedding_size + A)
         return self.reverse_network(reverse_input)
 
 
@@ -194,13 +186,12 @@ class DiffusionActionHead(nn.Module):
         self.hidden_dim = head_args['hidden_dim']
         self.use_layer_norm = head_args['use_layer_norm']
         self.diffusion_steps = head_args['diffusion_steps']
-        self.n_diffusion_samples = head_args['n_diffusion_samples']
         self.use_map = head_args['use_map']
         self.dtype = dtype
 
         self.diffusion_model = create_diffusion_model(
             obs_dim=self.hidden_dim, 
-            out_dim=self.action_dim * self.action_len,
+            out_dim=self.action_dim, # (B, L, A) -> (B * L, A)
             time_dim=self.time_dim,
             num_blocks=self.num_blocks,
             dropout_rate=self.dropout_rate,
@@ -211,40 +202,46 @@ class DiffusionActionHead(nn.Module):
 
         if self.use_map:
             self.map = MAPHead(in_dim, num_heads=1, num_readouts=1)
-            self.proj = nn.Linear(in_dim, self.hidden_dim)
-        betas = cosine_beta_schedule(self.diffusion_steps).float()
-        self.betas = betas
-        self.alphas = 1 - betas
-        self.alpha_hats = torch.cumprod(self.alphas, dim=0)
+        self.proj = nn.Linear(in_dim, self.hidden_dim)
+
+        
+        self.scheduler = DDPMScheduler(
+            num_train_timesteps=self.diffusion_steps,
+            beta_start=0.0001,
+            beta_end=0.02,
+            beta_schedule='squaredcos_cap_v2',
+            variance_type='fixed_small',
+            clip_sample=True,
+            clip_sample_range=self.max_action,
+            prediction_type='epsilon'
+        )
 
     def forward(self, embeddings, time=None, noisy_actions=None):
         if time is None or noisy_actions is None:
-            # B, embedding
-            time = torch.zeros((embeddings.shape[0], 1), device=embeddings.device) # (Batch , 1)
-            noisy_actions = torch.zeros(
-                (embeddings.shape[0], self.action_dim * self.action_len,), device=embeddings.device
-            ) # (Batch, L * A)
-        pred_eps = self.diffusion_model(embeddings, noisy_actions, time) # (Batch, L * A) or (N, Batch, L * A)
+            batch_size = embeddings.shape[0]
+            BL = batch_size * self.action_len # B * L
+            time = torch.zeros((BL, 1), device=embeddings.device) # (Batch , 1)
+            noisy_actions = torch.zeros((BL, self.action_len,), device=embeddings.device) # (BL,  A)
+        pred_eps = self.diffusion_model(embeddings, noisy_actions, time) # (BL, D), (BL, A), (BL, 1)
         return pred_eps
 
     # No window size
     def loss(self, embeddings, actions):
-        # size of embeddings will be [Batch, embedding_size]
-        if self.use_map:
-            embeddings = self.map(embeddings)
-            embeddings = embeddings.squeeze(1)
-            embeddings = self.proj(embeddings)
-        batch_size, embeddings_size = embeddings.shape
-        actions_flat = rearrange(actions, "b h a -> b (h a)")
-        actions_flat = actions_flat.clamp(-self.max_action, self.max_action)
+        # size of embeddings will be [Batch, length, embedding_size]
+        embeddings = embeddings[:, -self.action_len:] # last L token for action decoding
+        embeddings = self.proj(embeddings)
 
-        time = torch.randint(0, self.diffusion_steps, (self.n_diffusion_samples, batch_size, 1))
-        noise = torch.randn(self.n_diffusion_samples, *actions_flat.shape, device=actions_flat.device)
+        batch_size, _, embeddings_size = embeddings.shape # (B, L, 2048)
 
-        scale = torch.sqrt(self.alpha_hats[time]).to(actions_flat.device)
-        std = torch.sqrt(1 - self.alpha_hats[time]).to(actions_flat.device)
-        noisy_actions = scale * actions_flat.unsqueeze(0) + std * noise
-        pred_eps = self(embeddings, time=time.to(actions_flat.device), noisy_actions=noisy_actions)
+        time = torch.randint(0, self.diffusion_steps, (batch_size, 1)) # (B, 1)
+        noise = torch.randn((batch_size, self.action_len, self.action_dim) , device=actions.device) # (B, L, A)
+        noisy_actions = self.scheduler.add_noise(actions, noise, time) # (B, L, A)
+
+        noisy_actions_flat = rearrange(noisy_actions, "b l a -> (b l) a") # (BL, A)
+        time_flat = repeat(time, 'b t -> (b l) t', l=self.action_len) #(BL, )
+        embeddings_flat = rearrange(embeddings, 'b l d -> (b l) d') # (BL, 2048)
+        pred_eps = self(embeddings_flat, time=time_flat.to(actions.device), noisy_actions=noisy_actions_flat) # (BL, A)
+        pred_eps = rearrange(pred_eps, '(b l) a -> b l a', b=batch_size) # (B, L, A)
 
         loss = F.mse_loss(pred_eps, noise, reduction="none")
         loss = loss.mean()
@@ -261,40 +258,27 @@ class DiffusionActionHead(nn.Module):
         Returns:
             Tensor: Predicted denoised actions of shape (Batch, action_len * action_dim)
         """
-        if self.use_map:
-            embeddings = self.map(embeddings)
-            embeddings = embeddings.squeeze(1)
-            embeddings = self.proj(embeddings)
+        embeddings = embeddings[:, -self.action_len:]
+        embeddings = self.proj(embeddings)
         num_denoise_steps = num_denoise_steps or self.diffusion_steps
         batch_size = embeddings.shape[0]
-        action_shape = (batch_size, self.action_len * self.action_dim)
+        action_shape = (batch_size, self.action_len, self.action_dim)
 
         # Start with pure noise as the initial noisy action
         noisy_actions = torch.randn(action_shape, device=embeddings.device)
-        if return_history:
-            hist = []
-            hist.append(noisy_actions)
+        self.scheduler.set_timesteps(num_denoise_steps)
+
         with torch.autocast(device_type='cuda', dtype=dtype):
             for step in reversed(range(num_denoise_steps)):
-                # Get alpha, beta, and sqrt(1 - alpha_hat) for current step
-                alpha_1 = 1 / torch.sqrt(self.alphas[step])
-                alpha_2 = (1 - self.alphas[step]) / (torch.sqrt(1 - self.alpha_hats[step]))
-                beta = self.betas[step]
-
                 # Prepare time tensor for this specific step
-                time_tensor = torch.full((batch_size, 1), step, device=embeddings.device, dtype=torch.long)
+                time_flat = torch.full((batch_size * self.action_len, 1), step, device=embeddings.device, dtype=torch.long)
 
                 # Predict the noise in the current noisy actions
-                pred_eps = self.diffusion_model(embeddings, noisy_actions, time_tensor)
-
-                # Remove the predicted noise to get a less noisy estimate of the action
-                noisy_actions = alpha_1 * (noisy_actions - alpha_2 * pred_eps)
-                if return_history:
-                    hist.append(noisy_actions)
-                # Optional noise addition for non-final steps
-                if step > 0:
-                    noise = torch.randn_like(noisy_actions)
-                    noisy_actions = noisy_actions + torch.sqrt(beta) * noise
+                noisy_actions_flat = rearrange(noisy_actions, "b l a -> (b l) a")
+                embeddings_flat = rearrange(embeddings, 'b l d -> (b l) d') # (BL, 2048)
+                pred_eps = self.diffusion_model(embeddings_flat, noisy_actions_flat, time_flat)
+                pred_eps = rearrange(pred_eps, '(b l) a -> b l a', b=batch_size)
+                noisy_actions = self.scheduler.step(pred_eps, step, noisy_actions).prev_sample
 
         # Clamp the final prediction to the max action range
         predicted_actions = noisy_actions.clamp(-self.max_action, self.max_action)
@@ -335,7 +319,7 @@ class DiffusionPolicyHead(nn.Module):
             beta_start=0.0001,
             beta_end=0.02,
             beta_schedule='squaredcos_cap_v2',
-            variance_type='fixed_samll',
+            variance_type='fixed_small',
             clip_sample=True,
             clip_sample_range=self.max_action,
             prediction_type='epsilon'
@@ -360,8 +344,6 @@ class DiffusionPolicyHead(nn.Module):
             embeddings = embeddings.squeeze(1)
         embeddings = self.proj(embeddings)
         batch_size, embeddings_size = embeddings.shape
-        # actions_flat = rearrange(actions, "b h a -> b (h a)")
-        actions = actions.clamp(-self.max_action, self.max_action)
 
         time = torch.randint(0, self.diffusion_steps, (batch_size,)) # B, 
         noise = torch.randn(batch_size, self.action_len, self.action_dim, device=actions.device)

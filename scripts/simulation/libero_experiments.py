@@ -61,7 +61,7 @@ class GenerateConfig:
     wandb_project: str = "SpatialVLA-LIBERO"        # Name of W&B project to log to (use default!)
     wandb_entity: str = "jellyho_"          # Name of entity to log under
 
-    seed: int = 7                                    # Random Seed (for reproducibility)
+    seed: int = 16                                # Random Seed (for reproducibility)
 
     # fmt: on
 
@@ -78,7 +78,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
     model = VLAModel(cfg.checkpoint)
     print(model.model.device)
     model.model.action_head.scheduler = DDIMScheduler(
-                num_train_timesteps=100,
+                num_train_timesteps=20,
                 beta_start=0.0001,
                 beta_end=0.02,
                 beta_schedule='squaredcos_cap_v2',
@@ -87,7 +87,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 prediction_type='epsilon',
                 set_alpha_to_one=True
             )
-    model.model.action_head.scheduler.set_timesteps(10)
+    model.model.action_head.diffusion_steps = 20
     
 
     # Initialize local logging

@@ -29,6 +29,7 @@ from mergelora import merge_lora
 tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to gpu
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+
 from pynvml import *
 nvmlInit()
 handle = nvmlDeviceGetHandleByIndex(0)
@@ -56,7 +57,6 @@ if training_args.bf16:
     dtype = torch.bfloat16
 if training_args.fp16:
     dtype = torch.float16
-
 tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
     model_args, 
     load_8bit, 
@@ -81,11 +81,11 @@ dataset = RLDSDataset(
     train=True,
     window_size=1,
     future_action_window_size=model_args.action_len - 1,
-    enable_autotune=training_args.enable_autotune
+    enable_autotune=training_args.enable_autotune,
+    use_state_input=model_args.use_state_input
 )
 
 # sampler = DistributedSampler(dataset)
-
 collator = PaddedCollatorForActionPrediction(tokenizer.model_max_length, tokenizer.pad_token_id, padding_side='right')
 
 dataloader = DataLoader(
@@ -97,17 +97,14 @@ dataloader = DataLoader(
 )
 # Save statistics to a JSON file
 if not os.path.exists(training_args.output_dir):
-    os.makedirs(training_args.output_dir)
+    try:
+        os.makedirs(training_args.output_dir)
+    except:
+        pass
 if distributed_state.is_main_process:
     save_dataset_statistics(dataset.dataset_statistics, training_args.output_dir)
 temp_dir = f'{training_args.output_dir}_tmp'
 print('Dataset Loaded')
-
-# Quantization
-if training_args.bits in [4, 8]: 
-    from peft import prepare_model_for_kbit_training
-    model.config.torch_dtype=(torch.float32 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
 
 # Gradient Checkpointing
 if training_args.gradient_checkpointing: 
@@ -118,63 +115,23 @@ if training_args.gradient_checkpointing:
             output.requires_grad_(True)
         model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
-## LORA SETTING
-if training_args.lora_enable:
-    from peft import LoraConfig, get_peft_model
-    lora_config = LoraConfig(
-        r=training_args.lora_rank,
-        lora_alpha=training_args.lora_alpha,
-        target_modules=find_all_linear_names(model),
-        lora_dropout=training_args.lora_dropout,
-        bias=training_args.lora_bias,
-        init_lora_weights="gaussian",
-        use_rslora=training_args.use_rslora
-    )
-    if training_args.bits == 16:
-        if training_args.bf16:
-            model.to(torch.bfloat16)
-        if training_args.fp16:
-            model.to(torch.float16)
-    print("Adding LoRA adapters...")
-    model = get_peft_model(model, lora_config)
-
-print(model)
-
-# Quantization LoRA
-if training_args.bits in [4, 8]:
-    model.get_model().mm_projector.to(dtype=compute_dtype, device=training_args.device)
-    from peft.tuners.lora import LoraLayer
-    for name, module in model.named_modules():
-        if isinstance(module, LoraLayer):
-            if training_args.bf16:
-                module = module.to(torch.bfloat16)
-        if 'norm' in name:
-            module = module.to(torch.float32)
-        if 'lm_head' in name or 'embed_tokens' in name or 'action_head' in name or 'action_hidden_size' in name:
-            if hasattr(module, 'weight'):
-                if training_args.bf16 and module.weight.dtype == torch.float32:
-                    module = module.to(torch.bfloat16)
-
-for p in model.get_model().mm_projector.parameters():
-    p.requires_grad = True
-for p in model.action_head.parameters():
-    p.requires_grad = True
-model.print_trainable_parameters()
-print('LoRA Loaded')
-
+# print(model)
+print(sum(p.numel() for p in model.model.parameters() if p.requires_grad))
+print(sum(p.numel() for p in model.action_head.parameters() if p.requires_grad))
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
 decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
 decay_parameters = [name for name in decay_parameters if "bias" not in name]
-unused_parameters = [name for name, _ in model.named_parameters() if "vision_tower" in name and "layers" not in name]
+print(sum(p.numel() for n, p in model.named_parameters() if (n in decay_parameters and p.requires_grad)))
+print(sum(p.numel() for n, p in model.named_parameters() if (n not in decay_parameters and p.requires_grad)))
 optimizer_grouped_parameters = [
     {
-        "params": [p for n, p in model.named_parameters() if (n in decay_parameters and n not in unused_parameters and p.requires_grad)],
+        "params": [p for n, p in model.named_parameters() if (n in decay_parameters and p.requires_grad)],
         "weight_decay": training_args.weight_decay,
         "lr": training_args.learning_rate,
         "eps":training_args.adam_epsilon,
     },
     {
-        "params": [p for n, p in model.named_parameters() if (n not in decay_parameters and n not in unused_parameters and p.requires_grad)],
+        "params": [p for n, p in model.named_parameters() if (n not in decay_parameters and p.requires_grad)],
         "weight_decay": 0.0,
         "lr": training_args.learning_rate,
         "eps":training_args.adam_epsilon
@@ -214,6 +171,7 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 images=batch['pixel_values'].to(device_id),
                 attention_mask=batch['attention_mask'].to(device_id),
                 actions=batch['action'].to(device_id),
+                states=batch['observation']['proprio'] if model_args.use_state_input else None
             )
         normalized_loss = loss / training_args.gradient_accumulation_steps
         normalized_loss.backward()
@@ -226,6 +184,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
             if training_args.lr_scheduler_type != 'constant':
                 scheduler.step() 
             progress.update()
+            # info = nvmlDeviceGetMemoryInfo(handle)
+            # print(f"Used memory: {info.used / 1024 ** 2} MB")
 
         ## Logging        
         log_dict = {}
@@ -252,9 +212,10 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                         input_ids=batch['input_ids'].to(device_id),
                         images=batch['pixel_values'].to(device_id),
                         attention_mask=batch['attention_mask'].to(device_id),
-                        use_cache=True
+                        use_cache=True,
+                        states=batch['observation']['proprio'] if model_args.use_state_input else None
                     )
-                    prediction_time = float(time.time() - start)
+                    prediction_time = float(time.time() - start) / training_args.batch_size
                 action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')
                 log_dict['action_loss'] = action_loss.item()
                 log_dict['pred_time'] = prediction_time
@@ -268,34 +229,14 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
         if gradient_step_idx > 0 and gradient_step_idx % training_args.save_steps == 0:
             if distributed_state.is_main_process:
                 print(f"Saving Model Checkpoint for Step {gradient_step_idx}")
-                model.module.config.save_pretrained(temp_dir)
-                state_dict = get_peft_state_maybe_zero_3(model.module.named_parameters(), training_args.lora_bias)
-                non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.module.named_parameters())
-                model.module.save_pretrained(temp_dir, state_dict=state_dict)
-                torch.save(non_lora_state_dict, os.path.join(temp_dir, 'non_lora_trainables.bin'))
-                merge_lora(model_args.model_path, temp_dir, training_args.output_dir)
+                model.module.config.save_pretrained(training_args.output_dir)
+                model.module.save_pretrained(training_args.output_dir)
+                tokenizer.save_pretrained(training_args.output_dir)
 
             dist.barrier()
 
         if gradient_step_idx >= training_args.max_steps:
             print(f"Max step {training_args.max_steps} reached! Stopping training...")
             break
-           
 
-# Save configs and state_dicts into temp dir
-if distributed_state.is_main_process:
-    print(f"Saving Model Checkpoint for Step {gradient_step_idx}")
-
-    model.module.config.save_pretrained(temp_dir)
-    state_dict = get_peft_state_maybe_zero_3(model.module.named_parameters(), training_args.lora_bias)
-    non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.module.named_parameters())
-    model.module.save_pretrained(temp_dir, state_dict=state_dict)
-    torch.save(non_lora_state_dict, os.path.join(temp_dir, 'non_lora_trainables.bin'))
-
-    # Merge lora model into output dir
-    merge_lora(model_args.model_path, temp_dir, training_args.output_dir)
-
-dist.barrier()
 print('Checkpoint Saved. Finished.')
-
-nvmlShutdown()

@@ -2,6 +2,7 @@ from typing import List, Optional, Tuple, Union
 import time
 import torch
 import torch.nn as nn
+from einops import repeat
 from torch.nn import CrossEntropyLoss
 from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaModel, LlamaForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
@@ -46,7 +47,17 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.config = config
         self.post_init()  # Initialize weights and apply final processing
-
+        if hasattr(config, "use_state_input") and config.use_state_input:
+            self.state_proj = nn.Sequential(
+                nn.Linear(action_dim, action_dim),
+                nn.GELU(approximate="tanh"),
+                nn.Linear(action_dim, embed_size),
+            )
+            self.register_parameter(
+                "state_pos",
+                nn.Parameter(torch.empty(1, 1, config.state_dim), requires_grad=True),
+            )
+            nn.init.xavier_uniform_(self.state_pos.data)
         if config.head_args:
             if config.head_args['head_type'] == 'MLP':
                 self.action_head = MLPHead(config.hidden_size, config.head_args['action_hidden_sizes'], config.action_dim * config.action_len)
@@ -60,6 +71,11 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                     config.action_dim,
                     self.model.dtype
                 )
+                self.register_parameter(
+                    "action_pos",
+                    nn.Parameter(torch.empty(1, config.action_len, config.hidden_size), requires_grad=True),
+                )
+                nn.init.xavier_uniform_(self.action_pos.data)
             elif config.head_args['head_type'] == 'DiffusionPolicy':
                 self.action_head = DiffusionPolicyHead(
                     config.head_args,
@@ -93,18 +109,31 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         images: Optional[torch.FloatTensor] = None,
         return_dict: Optional[bool] = True,
         actions: Optional[torch.Tensor] = None,
+        states: Optional[torch.Tensor] = None,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states)
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict 
 
-        # [batch, input_ids] this may have
+        # Prepare language, image tokens
         input_ids, attention_mask, past_key_values, inputs_embeds, labels = \
             self.prepare_inputs_labels_for_multimodal(input_ids, attention_mask, past_key_values, labels, images)
 
+        # Prepare state tokens
+        if hasattr(config, "use_state_input") and self.config.use_state_input and state is not None:
+            batch_size = inputs_embeds.shape[0]
+            attention_mask = None
+            inputs_embeds = torch.cat([inputs_embeds, repeat(self.state_pos, '1 l a -> B l a', B=batch_size)], axis=1)
+
+        # Prepare noisy action tokens
         if self.config.head_args['head_type'] == 'DiT':
             input_ids, attention_mask, past_key_values, inputs_embeds, labels, time_enc, noise = \
             self.action_head.prepare_inputs_for_DiT_training(actions, input_ids, attention_mask, past_key_values, inputs_embeds, labels)
+        elif self.config.head_args['head_type'] == 'Diffusion':
+            batch_size = inputs_embeds.shape[0]
+            attention_mask = None
+            inputs_embeds = torch.cat([inputs_embeds, repeat(self.action_pos, '1 l a -> B l a', B=batch_size)], axis=1)
+
 
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
         outputs = self.model(
@@ -148,6 +177,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         use_cache: Optional[bool] = None,
         images: Optional[torch.FloatTensor] = None,
         num_denoise_steps: Optional[int] = None,
+        states: Optional[torch.Tensor] = None,
     ):
         # Prepare denoising step for DiT
         batch_size = input_ids.shape[0]
@@ -164,6 +194,10 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                 self.prepare_inputs_labels_for_multimodal(input_ids, attention_mask, past_key_values, labels, images)
         
         for i in range(loop_num):
+            if hasattr(config, "use_state_input") and self.config.use_state_input and state is not None:
+                batch_size = inputs_embeds.shape[0]
+                attention_mask = None
+                inputs_embeds = torch.cat([inputs_embeds, repeat(self.state_pos, '1 l a -> B l a', B=batch_size)], axis=1)
             if self.config.head_args['head_type'] == 'DiT':
                 step = step_iterator[i]
                 timesteps = torch.full((batch_size,), step, device=inputs_embeds.device, dtype=torch.long)
@@ -189,6 +223,10 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                         sliced_kv.append((sliced_keys, sliced_values))
                     past_key_values = tuple(sliced_kv)
             else:
+                if self.config.head_args['head_type'] == 'Diffusion':
+                    batch_size = inputs_embeds.shape[0]
+                    attention_mask = None
+                    inputs_embeds = torch.cat([inputs_embeds, repeat(self.action_pos, '1 l a -> B l a', B=batch_size)], axis=1)
                 outputs = self.model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,

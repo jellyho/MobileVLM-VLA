@@ -68,7 +68,6 @@ class VLAModel:
         # Check whether this process_images is same as dataset
         images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=self.dtype)
         prompt = f'What action should the robot take to {prompt}?'
-
         conv = conv_templates['v1'].copy() # Hard-coded
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)

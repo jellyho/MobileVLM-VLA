@@ -1017,6 +1017,7 @@ def libero_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     )
     trajectory["observation"]["EEF_state"] = trajectory["observation"]["state"][:, :6]
     trajectory["observation"]["gripper_state"] = trajectory["observation"]["state"][:, -2:]  # 2D gripper state
+    # trajectory["observation"][""]
     return trajectory
 
 # === Registry ===
@@ -1122,6 +1123,7 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     "tdroid_cover_object_with_towel": tdroid_dataset_transform,
     ### DROID Finetuning datasets
     "droid_wipe": droid_finetuning_transform,
+    ### LIBERO
     "libero_spatial_no_noops": libero_dataset_transform,
     "libero_object_no_noops": libero_dataset_transform,
     "libero_goal_no_noops": libero_dataset_transform,
