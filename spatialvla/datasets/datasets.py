@@ -42,6 +42,7 @@ class RLDSBatchTransform:
     image_processor: Any
     window_size: int = 1
     future_action_window_size: int = 0
+    use_state_input: bool = False
 
     def __call__(self, rlds_batch: Dict[str, Any]) -> Dict[str, Any]:
         """Converts a RLDS batch to the format expected by the OpenVLA collator/models."""
@@ -64,7 +65,9 @@ class RLDSBatchTransform:
         # Tokenize (w/ `base_tokenizer`)
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"))
 
-        return dict(pixel_values=new_img, input_ids=input_ids, action=action, dataset_name=dataset_name, img=img)
+        proprio = rlds_batch['observation']['proprio'] if self.use_state_input else None
+
+        return dict(pixel_values=new_img, input_ids=input_ids, action=action, proprio=proprio, dataset_name=dataset_name, img=img)
 
 
 class RLDSDataset(IterableDataset):
@@ -99,7 +102,7 @@ class RLDSDataset(IterableDataset):
             mixture_spec,
             load_camera_views=("primary",),
             load_depth=False,
-            load_proprio=use_state_input, #TRUERUEUREUREURRUEUER
+            load_proprio=use_state_input,
             load_language=True,
             action_proprio_normalization_type=NormalizationType.NORMAL,
         )

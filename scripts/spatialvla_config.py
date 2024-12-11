@@ -103,7 +103,7 @@ class TrainingArguments(transformers.TrainingArguments):
     seed: int = field(default=42)
     batch_size: int = field(default=32)
     shuffle_buffer_size: int = field(default=10000)
-    enable_autotune: bool = field(default=False)
+    enable_autotune: bool = field(default=True)
     image_aug: bool = field(default=False)
     max_steps: int = field(default=50000)  
     save_steps: int = field(default=1000)

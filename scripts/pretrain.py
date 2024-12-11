@@ -29,21 +29,10 @@ from mergelora import merge_lora
 tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to gpu
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-
-from pynvml import *
-nvmlInit()
-handle = nvmlDeviceGetHandleByIndex(0)
-
 distributed_state = PartialState()
 device_id = distributed_state.local_process_index
 torch.cuda.set_device(device_id)
 torch.cuda.empty_cache()
-
-local_rank = None
-
-def rank0_print(*args):
-    if local_rank == 0:
-        print(*args)
 
 ## Argument parsing
 parser = transformers.HfArgumentParser((ModelArguments, TrainingArguments))
@@ -71,6 +60,7 @@ print('Pretrained VLM Loaded')
 batch_transform = RLDSBatchTransform(
     tokenizer,
     image_processor,
+    use_state_input=model_args.use_state_input
 )
 
 dataset = RLDSDataset(
@@ -85,7 +75,6 @@ dataset = RLDSDataset(
     use_state_input=model_args.use_state_input
 )
 
-# sampler = DistributedSampler(dataset)
 collator = PaddedCollatorForActionPrediction(tokenizer.model_max_length, tokenizer.pad_token_id, padding_side='right')
 
 dataloader = DataLoader(
@@ -115,14 +104,9 @@ if training_args.gradient_checkpointing:
             output.requires_grad_(True)
         model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
-# print(model)
-print(sum(p.numel() for p in model.model.parameters() if p.requires_grad))
-print(sum(p.numel() for p in model.action_head.parameters() if p.requires_grad))
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
 decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
 decay_parameters = [name for name in decay_parameters if "bias" not in name]
-print(sum(p.numel() for n, p in model.named_parameters() if (n in decay_parameters and p.requires_grad)))
-print(sum(p.numel() for n, p in model.named_parameters() if (n not in decay_parameters and p.requires_grad)))
 optimizer_grouped_parameters = [
     {
         "params": [p for n, p in model.named_parameters() if (n in decay_parameters and p.requires_grad)],
@@ -171,7 +155,7 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 images=batch['pixel_values'].to(device_id),
                 attention_mask=batch['attention_mask'].to(device_id),
                 actions=batch['action'].to(device_id),
-                states=batch['observation']['proprio'] if model_args.use_state_input else None
+                states=batch['proprio'] if model_args.use_state_input else None
             )
         normalized_loss = loss / training_args.gradient_accumulation_steps
         normalized_loss.backward()
@@ -184,8 +168,6 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
             if training_args.lr_scheduler_type != 'constant':
                 scheduler.step() 
             progress.update()
-            # info = nvmlDeviceGetMemoryInfo(handle)
-            # print(f"Used memory: {info.used / 1024 ** 2} MB")
 
         ## Logging        
         log_dict = {}
@@ -213,7 +195,7 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                         images=batch['pixel_values'].to(device_id),
                         attention_mask=batch['attention_mask'].to(device_id),
                         use_cache=True,
-                        states=batch['observation']['proprio'] if model_args.use_state_input else None
+                        states=batch['proprio'] if model_args.use_state_input else None
                     )
                     prediction_time = float(time.time() - start) / training_args.batch_size
                 action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')

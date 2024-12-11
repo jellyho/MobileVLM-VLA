@@ -63,7 +63,7 @@ class VLAModel:
             outputs = outputs[: -len(stop_str)]
         return f"{outputs.strip()}"
 
-    def inference_action(self, unnorm_key, image, prompt):
+    def inference_action(self, unnorm_key, image, prompt, state):
         images = [image]
         # Check whether this process_images is same as dataset
         images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=self.dtype)

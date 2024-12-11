@@ -48,10 +48,11 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         self.config = config
         self.post_init()  # Initialize weights and apply final processing
         if hasattr(config, "use_state_input") and config.use_state_input:
+            state_dim = config.state_dim
             self.state_proj = nn.Sequential(
-                nn.Linear(action_dim, action_dim),
+                nn.Linear(state_dim, state_dim),
                 nn.GELU(approximate="tanh"),
-                nn.Linear(action_dim, embed_size),
+                nn.Linear(state_dim, config.hidden_size),
             )
             self.register_parameter(
                 "state_pos",
@@ -120,9 +121,9 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             self.prepare_inputs_labels_for_multimodal(input_ids, attention_mask, past_key_values, labels, images)
 
         # Prepare state tokens
-        if hasattr(config, "use_state_input") and self.config.use_state_input and state is not None:
+        if hasattr(self.config, "use_state_input") and self.config.use_state_input and states is not None:
             batch_size = inputs_embeds.shape[0]
-            attention_mask = None
+            attention_mask = None # Not good
             inputs_embeds = torch.cat([inputs_embeds, repeat(self.state_pos, '1 l a -> B l a', B=batch_size)], axis=1)
 
         # Prepare noisy action tokens
@@ -131,7 +132,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             self.action_head.prepare_inputs_for_DiT_training(actions, input_ids, attention_mask, past_key_values, inputs_embeds, labels)
         elif self.config.head_args['head_type'] == 'Diffusion':
             batch_size = inputs_embeds.shape[0]
-            attention_mask = None
+            attention_mask = None # Not good
             inputs_embeds = torch.cat([inputs_embeds, repeat(self.action_pos, '1 l a -> B l a', B=batch_size)], axis=1)
 
 
@@ -194,7 +195,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                 self.prepare_inputs_labels_for_multimodal(input_ids, attention_mask, past_key_values, labels, images)
         
         for i in range(loop_num):
-            if hasattr(config, "use_state_input") and self.config.use_state_input and state is not None:
+            if hasattr(self.config, "use_state_input") and self.config.use_state_input and states is not None:
                 batch_size = inputs_embeds.shape[0]
                 attention_mask = None
                 inputs_embeds = torch.cat([inputs_embeds, repeat(self.state_pos, '1 l a -> B l a', B=batch_size)], axis=1)

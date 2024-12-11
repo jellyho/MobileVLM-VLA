@@ -77,17 +77,17 @@ def eval_libero(cfg: GenerateConfig) -> None:
     # Load model
     model = VLAModel(cfg.checkpoint)
     print(model.model.device)
-    model.model.action_head.scheduler = DDIMScheduler(
-                num_train_timesteps=20,
-                beta_start=0.0001,
-                beta_end=0.02,
-                beta_schedule='squaredcos_cap_v2',
-                clip_sample=True,
-                clip_sample_range=5.0,
-                prediction_type='epsilon',
-                set_alpha_to_one=True
-            )
-    model.model.action_head.diffusion_steps = 20
+    # model.model.action_head.scheduler = DDIMScheduler(
+    #             num_train_timesteps=20,
+    #             beta_start=0.0001,
+    #             beta_end=0.02,
+    #             beta_schedule='squaredcos_cap_v2',
+    #             clip_sample=True,
+    #             clip_sample_range=5.0,
+    #             prediction_type='epsilon',
+    #             set_alpha_to_one=True
+    #         )
+    # model.model.action_head.diffusion_steps = 20
     
 
     # Initialize local logging

@@ -345,6 +345,7 @@ class PaddedCollatorForActionPrediction:
     model_max_length: int
     pad_token_id: int
     padding_side: str = "right"
+    use_state_input: bool = False
 
     def __call__(self, instances: Sequence[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         input_ids = [instance['input_ids'] for instance in instances]
@@ -363,8 +364,8 @@ class PaddedCollatorForActionPrediction:
         # Truncate (if necessary)
         input_ids = input_ids[:, : self.model_max_length]
 
-        # Get `attention_mask` by checking for `pad_token_id`
-        attention_mask = input_ids.ne(self.pad_token_id)
+        # Get `attention_mask` by checking for `pad_token_id` 
+        attention_mask = input_ids.ne(self.pad_token_id) # Since Right - Padding Applied!
 
         # [Contract] For VLA Training =>> No "Unimodal" Data!
         assert all([pv is not None for pv in pixel_values]), "Invalid VLA Example with `pixel_values = None`!"
@@ -381,11 +382,16 @@ class PaddedCollatorForActionPrediction:
 
         action = torch.stack([instance['action'] for instance in instances])
 
+        if self.use_state_input:
+            proprios = [instance["proprios"] for instance in instances]
+            proprios = torch.stack(proprios)
+
         output = dict(
             pixel_values=pixel_values,
             input_ids=input_ids,
             attention_mask=attention_mask,
-            action=action
+            action=action,
+            proprio=proprios if self.use_state_input else None
         )
         if dataset_names is not None:
             output["dataset_names"] = dataset_names

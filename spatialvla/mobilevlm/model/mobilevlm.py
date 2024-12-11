@@ -128,6 +128,7 @@ class MobileVLMMetaForCausalLM(ABC):
                 cur_labels = labels[batch_idx]
                 cur_new_labels = []
                 assert cur_labels.shape == cur_input_ids.shape
+            ## Insert Image tokens
             while image_token_indices.numel() > 0:
                 cur_image_features = image_features[cur_image_idx]
                 image_token_start = image_token_indices[0]
@@ -162,6 +163,10 @@ class MobileVLMMetaForCausalLM(ABC):
                 if labels is not None:
                     cur_new_labels.append(cur_labels)
             cur_new_input_embeds = [x.to(device=self.device) for x in cur_new_input_embeds]
+            ## cur_new_input_embeds finished
+
+            # Should I insert Proprio here?
+
             cur_new_input_embeds = torch.cat(cur_new_input_embeds, dim=0)
             new_input_embeds.append(cur_new_input_embeds)
             if labels is not None:
