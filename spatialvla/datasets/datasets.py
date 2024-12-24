@@ -31,7 +31,7 @@ from spatialvla.datasets.rlds.utils.data_utils import tree_map
 from spatialvla.datasets.rlds import make_interleaved_dataset, make_single_dataset
 from spatialvla.datasets.rlds.oxe import OXE_NAMED_MIXTURES, get_oxe_dataset_kwargs_and_weights
 from spatialvla.datasets.rlds.utils.data_utils import NormalizationType
-
+from transformers import PreTrainedTokenizerBase
 # HuggingFace Default / LLaMa-2 IGNORE_INDEX (for labels)
 IGNORE_INDEX = -100
 
@@ -43,6 +43,7 @@ class RLDSBatchTransform:
     window_size: int = 1
     future_action_window_size: int = 0
     use_state_input: bool = False
+    action_tokenizer: PreTrainedTokenizerBase = None
 
     def __call__(self, rlds_batch: Dict[str, Any]) -> Dict[str, Any]:
         """Converts a RLDS batch to the format expected by the OpenVLA collator/models."""
@@ -57,17 +58,28 @@ class RLDSBatchTransform:
         conv = conv_templates['v1'].copy()
         lang = rlds_batch["task"]["language_instruction"].decode().lower()
         prompt = f'What action should the robot take to {lang}?'
-        # prompt = 'what objects can you see?'
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
+        # if self.action_tokenizer is not None:
+        #     conv.append_message(conv.roles[1], self.action_tokenizer(action))
+        # else:
+        #     conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
-
+        #
         # Tokenize (w/ `base_tokenizer`)
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"))
+            
+        if self.action_tokenizer is not None:
+            input_ids = torch.cat([input_ids, torch.Tensor(self.action_tokenizer.discretize(action)).to(dtype=torch.long)], axis=0)
+            labels = list(input_ids)
+            labels = torch.tensor(labels)
+            labels[: -(self.window_size + self.future_action_window_size)] = IGNORE_INDEX
+        else:
+            labels = None
 
-        proprio = rlds_batch['observation']['proprio'] if self.use_state_input else None
+        proprio = torch.Tensor(rlds_batch['observation']['proprio']) if self.use_state_input else None
 
-        return dict(pixel_values=new_img, input_ids=input_ids, action=action, proprio=proprio, dataset_name=dataset_name, img=img)
+        return dict(pixel_values=new_img, input_ids=input_ids, labels=labels, action=action, proprio=proprio, dataset_name=dataset_name, img=img)
 
 
 class RLDSDataset(IterableDataset):

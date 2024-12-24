@@ -10,57 +10,62 @@ from typing import List, Union
 
 import numpy as np
 from transformers import PreTrainedTokenizerBase
+import scipy.stats as stats
 
 
 class ActionTokenizer:
     def __init__(
-        self, tokenizer: PreTrainedTokenizerBase, action_dim = 7
+        self, tokenizer: PreTrainedTokenizerBase, action_dim = 7, num_bins = 3
     ) -> None:
-        """
-        Discretizes continuous robot actions into N bins per dimension and maps to the least used tokens.
-
-        NOTE =>> by default, assumes a BPE-style tokenizer akin to the LlamaTokenizer, where *the least used tokens*
-                 appear at the end of the vocabulary!
-
-        :param tokenizer: Base LLM/VLM tokenizer to extend.
-        :param bins: Number of bins for each continuous value; we'll adopt a uniform binning strategy.
-        :param min_action: Minimum action value (for clipping, setting lower bound on bin interval).
-        :param max_action: Maximum action value (for clipping, setting upper bound on bin interval).
-        """
-        self.tokenizer, self.n_tokens = tokenizer, int(2 ** int(action_dim))
+        self.tokenizer, self.n_tokens = tokenizer, int(num_bins ** int(action_dim))
+        self.action_dim = action_dim
+        self.num_bins = num_bins
         self.action_token_begin_idx: int = int(self.tokenizer.vocab_size - (self.n_tokens + 1))
+
+        self.multiplier = np.array([num_bins ** i for i in range(action_dim)]) # N by 1
+        self.detokenize_mapping = np.array([(self.to_base(i, self.num_bins) - (self.num_bins - 1) // 2) for i in range(self.n_tokens)])      
+  
+        self.ppf_values = []
+        for b in range(1, num_bins):
+            self.ppf_values.append(stats.norm.ppf(b / num_bins, loc=0, scale=1))
+
+        self.default_token = self.discretize(np.zeros(action_dim,))
+
+    def to_base(self, n, base):
+        result = np.zeros((self.action_dim,))
+        i = 0
+        while n > 0:
+            result[i] = n % base
+            n //= base
+            i += 1
+        return result
 
     def __call__(self, action: np.ndarray) -> Union[str, List[str]]:
         """Clip & bin actions to *the last `n_bins` tokens* of the vocabulary (e.g., tokenizer.vocab[-256:])."""
-        discretized_action = np.digitize(action, self.bins)
-
+        tokens = self.discretize(action)
         # Handle single element vs. batch
-        if len(discretized_action.shape) == 1:
-            return self.tokenizer.decode(list(self.tokenizer.vocab_size - discretized_action))
+        if len(tokens.shape) == 1:
+            return self.tokenizer.decode(list(tokens))
         else:
-            return self.tokenizer.batch_decode((self.tokenizer.vocab_size - discretized_action).tolist())
+            return self.tokenizer.batch_decode(tokens.tolist())
 
-    def decode_token_ids_to_actions(self, action_token_ids: np.ndarray) -> np.ndarray:
-        """
-        Returns continuous actions for discrete action token IDs.
+    def discretize(self, action):
+        bins = np.digitize(action, bins=self.ppf_values)
+        tokens = bins @ self.multiplier
+ 
+        return self.tokenizer.vocab_size - tokens # (1, ) for single data, or (B, 1) for batch 
 
-        NOTE =>> Because of the way the actions are discretized w.r.t. the bins (and not the bin centers), the
-                 digitization returns bin indices between [1, # bins], inclusive, when there are actually only
-                 (# bins - 1) bin intervals.
+    def detokenize(self, action_token_ids: np.ndarray) -> np.ndarray:
+        # Just in case, If token_ids is outside of the reserved token id, just set to 0
+        if self.default_token:
+            mask = action_token_ids <= self.action_token_begin_idx
+            action_token_ids[mask] = self.default_token
 
-                 Therefore, if the digitization returns the last possible index, we map this to the last bin interval.
-
-        EXAMPLE =>> Let's say self._bins has 256 values. Then self._bin_centers has 255 values. Digitization returns
-                    indices between [1, 256]. We subtract 1 from all indices so that they are between [0, 255]. There
-                    is still one index (i==255) that would cause an out-of-bounds error if used to index into
-                    self._bin_centers. Therefore, if i==255, we subtract 1 from it so that it just becomes the index of
-                    the last bin center. We implement this simply via clipping between [0, 255 - 1].
-        """
         discretized_actions = self.tokenizer.vocab_size - action_token_ids
-        discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=self.bin_centers.shape[0] - 1)
-
-        return self.bin_centers[discretized_actions]
+        return self.detokenize_mapping[discretized_actions]
 
     @property
     def vocab_size(self) -> int:
         return self.n_bins
+
+    

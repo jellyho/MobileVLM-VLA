@@ -28,10 +28,7 @@ from mergelora import merge_lora
 
 tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to gpu
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-from pynvml import *
-nvmlInit()
-handle = nvmlDeviceGetHandleByIndex(0)
+os.environ["WANDB_MODE"] = "dryrun"
 
 distributed_state = PartialState()
 device_id = distributed_state.local_process_index

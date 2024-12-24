@@ -226,9 +226,21 @@ class DiffusionActionHead(nn.Module):
         return pred_eps
 
     # No window size
-    def loss(self, embeddings, actions):
+    def loss(self, embeddings, actions, attention_mask=None):
         # size of embeddings will be [Batch, length, embedding_size]
-        embeddings = embeddings[:, -self.action_len:] # last L token for action decoding
+        # In case of it is right padded
+        if attention_mask is not None:
+            batch_size = embeddings.shape[0]
+            hidden_size = embeddings.shape[-1]
+            left_padded_tensor = torch.zeros((batch_size, self.action_len, hidden_size), device=embeddings.device)
+            for i in range(batch_size):
+                # Count the number of valid tokens in the sequence
+                valid_count = attention_mask[i].sum().item()
+                # Slice the valid tokens and place them on the left
+                left_padded_tensor[i] = embeddings[i, attention_mask[i] == 1][-self.action_len:]
+            embeddings = left_padded_tensor
+        else:
+            embeddings = embeddings[:, -self.action_len:] # last L token for action decoding
         embeddings = self.proj(embeddings)
 
         batch_size, _, embeddings_size = embeddings.shape # (B, L, 2048)
@@ -247,7 +259,7 @@ class DiffusionActionHead(nn.Module):
         loss = loss.mean()
         return loss
 
-    def predict_action(self, embeddings, num_denoise_steps=None, return_history=False, dtype=torch.bfloat16):
+    def predict_action(self, embeddings, num_denoise_steps=None, return_history=False, dtype=torch.bfloat16, attention_mask=None):
         """
         Predict the action from the given embeddings using denoising steps.
 
@@ -258,7 +270,19 @@ class DiffusionActionHead(nn.Module):
         Returns:
             Tensor: Predicted denoised actions of shape (Batch, action_len * action_dim)
         """
-        embeddings = embeddings[:, -self.action_len:]
+        if attention_mask is not None:
+            batch_size = embeddings.shape[0]
+            hidden_size = embeddings.shape[-1]
+            left_padded_tensor = torch.zeros((batch_size, self.action_len, hidden_size), device=embeddings.device)
+            for i in range(batch_size):
+                # Count the number of valid tokens in the sequence
+                valid_count = attention_mask[i].sum().item()
+                # Slice the valid tokens and place them on the left
+                left_padded_tensor[i] = embeddings[i, attention_mask[i] == 1][-self.action_len:]
+            embeddings = left_padded_tensor
+        else:
+            embeddings = embeddings[:, -self.action_len:] # last L token for action decoding
+        # embeddings = embeddings[:, -self.action_len:]
         embeddings = self.proj(embeddings)
         num_denoise_steps = num_denoise_steps or self.diffusion_steps
         batch_size = embeddings.shape[0]

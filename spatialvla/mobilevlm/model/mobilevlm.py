@@ -7,7 +7,7 @@ from spatialvla.mobilevlm.model.vision_projector import build_vision_projector
 from spatialvla.mobilevlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, \
     DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from spatialvla.datasets.rlds.utils.data_utils import load_statistics_from_json
-
+from spatialvla.mobilevlm.action_tokenizer import ActionTokenizer
 
 class MobileVLMMetaModel:
     def __init__(self, config):
@@ -88,7 +88,7 @@ class MobileVLMMetaForCausalLM(ABC):
         return image_features
 
     def prepare_inputs_labels_for_multimodal(
-        self, input_ids, attention_mask, past_key_values, labels, images, states=None
+        self, input_ids, attention_mask, past_key_values, labels, images, additional_modality=None
     ):
         vision_tower = self.get_vision_tower()
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
@@ -166,8 +166,15 @@ class MobileVLMMetaForCausalLM(ABC):
             ## cur_new_input_embeds finished
 
             # Should I insert Proprio here?
+            if additional_modality:
+                for modal in additional_modality:
+                    cur_modal_embeds = modal[batch_idx] # N, 2048
+                    cur_new_input_embeds.append(cur_modal_embeds)
+                    if labels is not None:
+                        cur_new_labels.append(torch.full((cur_modal_embeds.shape[0],), IGNORE_INDEX, device=labels.device, dtype=labels.dtype))
 
             cur_new_input_embeds = torch.cat(cur_new_input_embeds, dim=0)
+            
             new_input_embeds.append(cur_new_input_embeds)
             if labels is not None:
                 cur_new_labels = torch.cat(cur_new_labels, dim=0)
@@ -209,11 +216,13 @@ class MobileVLMMetaForCausalLM(ABC):
                 attention_mask = torch.cat((new_attn_mask_pad_left, attention_mask), dim=1)
                 assert attention_mask.shape == new_input_embeds.shape[:2]
 
-        # ignore 0 indexing
+        # ignore 0 indexing # do I need this?
+        # if attention_mask is not None:
+        #     new_input_embeds[~attention_mask] = 0.0
         if attention_mask is not None:
-            new_input_embeds[~attention_mask] = 0.0
+            attention_mask = attention_mask.contiguous()
 
-        return None, attention_mask, past_key_values, new_input_embeds, new_labels
+        return None, attention_mask, past_key_values, new_input_embeds.contiguous(), new_labels
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):
         if model_args.mm_use_im_patch_token:
@@ -260,7 +269,6 @@ class MobileVLMMetaForCausalLM(ABC):
                     p.requires_grad = False
 
 def load_pretrained_model(model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", dtype=torch.bfloat16):
-
     from spatialvla.mobilevlm.model.mobilellama import MobileLlamaForCausalLM
 
     kwargs = {"device_map": device_map}
@@ -357,7 +365,8 @@ def load_pretrained_vlm_for_vla(model_args, load_8bit=False, load_4bit=False, de
 
     model.get_model().mm_projector.to(device=device, dtype=dtype)
 
-    model.action_head.to(device)
+    if model.action_head:
+        model.action_head.to(device)
     
     return tokenizer, model, image_processor, context_len
 
@@ -405,8 +414,12 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda", dtype=
 
     if model.action_head:
         model.action_head.to(device=device)
-        dataset_statistics = load_statistics_from_json(model_path)
+    dataset_statistics = load_statistics_from_json(model_path)
 
     image_processor = vision_tower.image_processor
+
+    if model.config.head_args['head_type'] == 'BR':
+        action_tokenizer = ActionTokenizer(tokenizer)
+        model.action_tokenizer = action_tokenizer
 
     return tokenizer, model, image_processor, dataset_statistics

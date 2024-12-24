@@ -27,12 +27,12 @@ DiffusionHead = {
     'hidden_projection': 'pass', # If use_map is true, set this to pass
     'use_map' : False,
     'max_action': 5.0,
-    'time_dim':  256,
+    'time_dim':  32,
     'num_blocks': 3,
     'dropout_rate': 0.0,
     'hidden_dim': 256,
     'use_layer_norm':True,
-    'diffusion_steps': 100,
+    'diffusion_steps': 20,
     'n_diffusion_samples': 1,
 }
 
@@ -59,19 +59,38 @@ DiT = {
     'sched':'DDIM'
 }
 
+BR = {
+    'head_type':'BR',
+    'hidden_projection': 'pass', # Always pass
+    "net_type": "unet1D_si",
+    "interpolant_type": "power3",
+    "gamma_type": "(2t(t-1))^0.5",
+    "epsilon_type": "1-t",
+    "beta_max": 0.03,
+    "t0": 1e-4,
+    "T": 1,
+    "clip_denoise": False,
+    "pretrain": False,
+    'obs_dim': 512,
+    'obs_horizon': 1,
+    'prior_policy': None,
+    'num_denoise_steps': 5,
+}
+
 HEAD_ARGS = {
     'MLP': MLPHead,
     'MAP': MAPHead,
     'Diffusion': DiffusionHead,
     'DiffusionPolicy': DiffusionPolicyHead,
-    'DiT': DiT
+    'DiT': DiT,
+    'BR': BR
 }
 
 @dataclass
 class ModelArguments:
     model_path: Optional[str] = field(default="remyxai/SpaceLLaVA-lite")
-    action_head: str = field(default='MLP')
-    head_args: Dict[str, Any] = field(default_factory=lambda: DiffusionHead) 
+    action_head: str = field(default='BR')
+    head_args: Dict[str, Any] = field(default_factory=lambda: BR) 
     action_dim: int = field(default=7)
     action_len: int = field(default=1)
     use_state_input: bool = field(default=False)

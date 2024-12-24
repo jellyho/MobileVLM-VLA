@@ -72,14 +72,25 @@ class VLAModel:
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
+        stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
         # Input
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
-        with torch.inference_mode():
-            action = self.model.predict_action(
-                input_ids=input_ids,
-                images=images_tensor,
-                use_cache=True
-            )
+        if self.model.config.head_args['head_type'] == 'BR':
+            with torch.inference_mode():
+                action = self.model.predict_action_br(
+                    input_ids=input_ids,
+                    images=images_tensor,
+                    num_denoise_steps=5
+                )
+        else:
+            with torch.inference_mode():
+                action = self.model.predict_action(
+                    input_ids=input_ids,
+                    images=images_tensor,
+                    use_cache=True
+                )
+        print('before unnorm', action)
         action = action.cpu().numpy()[0]
         action = self.unnorm_action(unnorm_key, action)
+        print('after unnorm', action)
         return action

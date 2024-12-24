@@ -21,13 +21,15 @@ from spatialvla.datasets import RLDSDataset, RLDSBatchTransform
 from spatialvla.datasets.rlds.utils.data_utils import save_dataset_statistics
 from spatialvla.datasets.rlds.utils.data_utils import PaddedCollatorForActionPrediction
 
-from spatialvla.mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla
+from spatialvla.mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla, load_vla
 from spatialvla.mobilevlm.train.train import find_all_linear_names, get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3
 from spatialvla_config import ModelArguments, TrainingArguments, HEAD_ARGS
 from mergelora import merge_lora
+from spatialvla.mobilevlm.action_tokenizer import ActionTokenizer
 
 tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to gpu
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["WANDB_MODE"] = "online"
 
 distributed_state = PartialState()
 device_id = distributed_state.local_process_index
@@ -53,14 +55,31 @@ tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
     device=device_id,
     dtype=dtype
 )
+# tokenizer, model, image_processor, _ = load_vla(
+#     'checkpoints/libero_object_br_full_v5',
+#     load_8bit=False, 
+#     load_4bit=False,
+#     device='cuda',
+# )
 model.config.use_cache = False
 model = model.to(device_id)
 print('Pretrained VLM Loaded')
 
+## Important!
+if model.config.head_args['head_type'] == 'BR':
+    action_tokenizer = ActionTokenizer(tokenizer)
+    model.action_tokenizer = action_tokenizer
+else:
+    action_tokenizer = None
+
+
 batch_transform = RLDSBatchTransform(
     tokenizer,
     image_processor,
-    use_state_input=model_args.use_state_input
+    use_state_input=model_args.use_state_input,
+    action_tokenizer=action_tokenizer,
+    window_size=1,
+    future_action_window_size=model_args.action_len - 1
 )
 
 dataset = RLDSDataset(
@@ -75,7 +94,13 @@ dataset = RLDSDataset(
     use_state_input=model_args.use_state_input
 )
 
-collator = PaddedCollatorForActionPrediction(tokenizer.model_max_length, tokenizer.pad_token_id, padding_side='right')
+collator = PaddedCollatorForActionPrediction(
+    tokenizer.model_max_length, 
+    tokenizer.pad_token_id, 
+    padding_side='right',
+    use_state_input=model_args.use_state_input,
+    use_label=(model.config.head_args['head_type'] == 'BR')
+)
 
 dataloader = DataLoader(
     dataset,
@@ -84,6 +109,7 @@ dataloader = DataLoader(
     collate_fn=collator,
     num_workers=0,  # Important =>> Set to 0 if using RLDS; TFDS rolls its own parallelism!
 )
+
 # Save statistics to a JSON file
 if not os.path.exists(training_args.output_dir):
     try:
@@ -106,21 +132,41 @@ if training_args.gradient_checkpointing:
 
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
 decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
-decay_parameters = [name for name in decay_parameters if "bias" not in name]
-optimizer_grouped_parameters = [
+decay_parameters_names = [name for name in decay_parameters if "bias" not in name]
+optimizer_grouped_parameters = []
+if model.module.config.head_args['head_type'] == 'BR':
+    si_parameters_names = []
+    for n, p in model.named_parameters():
+        if 'si.' in n:
+            si_parameters_names.append(n)
+    decay_params = [p for n, p in model.named_parameters() if (n in decay_parameters_names and n not in si_parameters_names and p.requires_grad)]
+    nondecay_params = [p for n, p in model.named_parameters() if (n not in decay_parameters_names and n not in si_parameters_names and p.requires_grad)]
+    si_params = [p for n , p in model.named_parameters() if (n in si_parameters_names and p.requires_grad)]
+    si_parameters_names.append(
+            {
+            "params": si_params,
+            "weight_decay": 0.0,
+            "lr": 5e-6,
+            "eps":training_args.adam_epsilon,
+        }
+    )
+else:    
+    decay_params = [p for n, p in model.named_parameters() if (n in decay_parameters_names and p.requires_grad)]
+    nondecay_params = [p for n, p in model.named_parameters() if (n not in decay_parameters_names and p.requires_grad)]
+optimizer_grouped_parameters.extend([
     {
-        "params": [p for n, p in model.named_parameters() if (n in decay_parameters and p.requires_grad)],
+        "params": decay_params,
         "weight_decay": training_args.weight_decay,
         "lr": training_args.learning_rate,
         "eps":training_args.adam_epsilon,
     },
     {
-        "params": [p for n, p in model.named_parameters() if (n not in decay_parameters and p.requires_grad)],
+        "params": nondecay_params,
         "weight_decay": 0.0,
         "lr": training_args.learning_rate,
         "eps":training_args.adam_epsilon
     },
-]
+])
 optimizer = AdamW(optimizer_grouped_parameters)
 
 if training_args.lr_scheduler_type == 'linear':
@@ -155,8 +201,23 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 images=batch['pixel_values'].to(device_id),
                 attention_mask=batch['attention_mask'].to(device_id),
                 actions=batch['action'].to(device_id),
-                states=batch['proprio'] if model_args.use_state_input else None
+                states=batch['proprio'] if model_args.use_state_input else None,
+                labels=batch['labels'] if model.module.config.head_args['head_type'] == 'BR' else None
             )
+            if model.module.config.head_args['head_type'] == 'BR':
+                action_logits = loss.logits[:, -51:-1]
+                action_preds = action_logits.argmax(dim=2)
+                action_gt = batch['labels'][:, -50:].to(action_logits.device)
+                mask = action_gt > action_tokenizer.action_token_begin_idx
+                correct_preds = (action_preds == action_gt) & mask
+                action_accuracy = correct_preds.sum().float() / mask.sum().float()
+                eps_loss = loss.loss[5]
+                ce_loss = loss.loss[1]
+                v_loss = loss.loss[2]
+                s_loss = loss.loss[3]
+                b_loss = loss.loss[4]
+                loss = loss.loss[0]
+
         normalized_loss = loss / training_args.gradient_accumulation_steps
         normalized_loss.backward()
         gradient_step_idx = batch_idx // training_args.gradient_accumulation_steps
@@ -166,7 +227,9 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=training_args.max_grad_norm)
             optimizer.step()
             if training_args.lr_scheduler_type != 'constant':
-                scheduler.step() 
+                scheduler.step()
+            if model.module.config.head_args['head_type'] == 'BR':
+                model.module.si.ema.update()
             progress.update()
 
         ## Logging        
@@ -195,15 +258,24 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                         images=batch['pixel_values'].to(device_id),
                         attention_mask=batch['attention_mask'].to(device_id),
                         use_cache=True,
-                        states=batch['proprio'] if model_args.use_state_input else None
+                        states=batch['proprio'] if model_args.use_state_input else None,
+                        prior_actions=batch['action'].to(device_id)
                     )
                     prediction_time = float(time.time() - start) / training_args.batch_size
                 action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')
                 log_dict['action_loss'] = action_loss.item()
                 log_dict['pred_time'] = prediction_time
+                        
 
         if distributed_state.is_main_process:
             log_dict['loss'] = normalized_loss.item()
+            if model.module.config.head_args['head_type'] == 'BR':
+                log_dict['token acc'] = action_accuracy
+                log_dict['eps_loss'] = eps_loss.detach().cpu().numpy()
+                log_dict['ce_loss'] = ce_loss.cpu().numpy()
+                log_dict['v_loss'] = v_loss.detach().cpu().numpy()
+                log_dict['s_loss'] = s_loss.detach().cpu().numpy()
+                log_dict['b_loss'] = b_loss.detach().cpu().numpy()
             log_dict['learning_rate'] = scheduler.get_last_lr()[0] if training_args.lr_scheduler_type != 'constant' else training_args.learning_rate
             wandb.log(log_dict, step=gradient_step_idx)
 

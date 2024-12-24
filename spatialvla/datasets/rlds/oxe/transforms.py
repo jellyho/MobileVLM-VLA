@@ -1022,6 +1022,7 @@ def libero_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 
 # === Registry ===
 OXE_STANDARDIZATION_TRANSFORMS = {
+    'vla_benchmark_5hz': lg_delta_ee_transform,
     'vla_benchmark': lg_delta_ee_transform,
     'bm_pick_tape_single': lg_delta_ee_transform,
     'bm_move_bowl': lg_delta_ee_transform,

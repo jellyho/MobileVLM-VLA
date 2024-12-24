@@ -185,6 +185,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                 # [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets
                 # (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
                 action = invert_gripper_action(action)
+                print(action)
 
                 # Execute action in environment
                 obs, reward, done, info = env.step(action.tolist())

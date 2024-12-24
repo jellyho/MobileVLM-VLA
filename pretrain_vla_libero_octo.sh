@@ -18,18 +18,19 @@ srun --job-name=lib_$2 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_bac
     --weight_decay 1e-6 \
     --data_root_dir "/home/shared/rlds_datasets" \
     --data_mix "libero_$2_no_noops" \
-    --output_dir "checkpoints/libero_$2_octo_full_state" \
+    --output_dir "checkpoints/libero_$2_octo_full_v2" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \
     --action_head "Diffusion" \
     --action_dim 7 \
     --action_len 8 \
-    --use_state_input true \
+    --use_state_input false \
     --state_dim 8 \
     --max_steps 50000 \
     --save_steps 5000 \
     --shuffle_buffer_size 20000 \
     --batch_size 32 \
     --image_aug false \
-    --wandb_project "VLA_LIBERO_DP"
+    --wandb_project "VLA_LIBERO_DP" \
+    --enable_autotune true

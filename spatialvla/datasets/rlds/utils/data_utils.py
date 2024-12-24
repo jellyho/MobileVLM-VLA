@@ -339,17 +339,20 @@ def allocate_threads(n: Optional[int], weights: np.ndarray):
         allocation[i] += 1
 
     return allocation
-
+IGNORE_INDEX = -100
 @dataclass
 class PaddedCollatorForActionPrediction:
     model_max_length: int
     pad_token_id: int
     padding_side: str = "right"
     use_state_input: bool = False
+    use_label: bool = False
 
     def __call__(self, instances: Sequence[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         input_ids = [instance['input_ids'] for instance in instances]
         pixel_values = [instance["pixel_values"] for instance in instances]
+        if self.use_label:
+            labels = [instance['labels'] for instance in instances]
         if "dataset_name" in instances[0]:
             dataset_names = [instance["dataset_name"] for instance in instances]
         else:
@@ -359,7 +362,10 @@ class PaddedCollatorForActionPrediction:
         #   => Handle padding via RNN Utils => `pad_sequence`
         assert self.padding_side == "right", f"Invalid Tokenizer `{self.padding_side = }`"
         input_ids = pad_sequence(input_ids, batch_first=True, padding_value=self.pad_token_id)
-        # labels = pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
+
+        if self.use_label:
+            labels = pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
+            labels = labels[:, : self.model_max_length]
 
         # Truncate (if necessary)
         input_ids = input_ids[:, : self.model_max_length]
@@ -383,7 +389,7 @@ class PaddedCollatorForActionPrediction:
         action = torch.stack([instance['action'] for instance in instances])
 
         if self.use_state_input:
-            proprios = [instance["proprios"] for instance in instances]
+            proprios = [instance["proprio"] for instance in instances]
             proprios = torch.stack(proprios)
 
         output = dict(
@@ -395,4 +401,6 @@ class PaddedCollatorForActionPrediction:
         )
         if dataset_names is not None:
             output["dataset_names"] = dataset_names
+        if self.use_label:
+            output['labels'] = labels
         return output
