@@ -102,7 +102,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                 model_args['action_dim'] = config.action_dim
                 model_args['action_horizon'] = config.action_len
                 self.si = StochasticInterpolants(model_args)
-                self.si.load_model(model_args, device=0)
+                self.si.load_model(model_args, device='cuda')
                 self.action_head = False
         else:
             self.action_head = False
@@ -249,7 +249,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         additional_modality = []
         ## Prepare state tokens
         if hasattr(self.config, "use_state_input") and self.config.use_state_input and states is not None:
-            addtional_modality.append(self.get_state_embeds(states))
+            additional_modality.append(self.get_state_embeds(states))
 
         ## Prepare action positional token ## TURN OFF for older verison of octo policy
         if self.config.head_args['head_type'] == 'Diffusion':

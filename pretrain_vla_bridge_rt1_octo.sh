@@ -32,8 +32,8 @@ srun --job-name=br_rt1 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_bac
     --state_dim 8 \
     --max_steps 50000 \
     --save_steps 5000 \
-    --shuffle_buffer_size 30000 \
+    --shuffle_buffer_size 100000 \
     --batch_size 32 \
     --image_aug false \
-    --wandb_project "VLA_LIBERO_DP" \
+    --wandb_project "VLA_BRIDGE_RT_1" \
     --enable_autotune true

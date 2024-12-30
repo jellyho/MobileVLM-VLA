@@ -56,7 +56,7 @@ tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
     dtype=dtype
 )
 # tokenizer, model, image_processor, _ = load_vla(
-#     'checkpoints/libero_object_br_full_v5',
+#     'checkpoints/bridge_rt1',
 #     load_8bit=False, 
 #     load_4bit=False,
 #     device='cuda',
@@ -142,7 +142,7 @@ if model.module.config.head_args['head_type'] == 'BR':
     decay_params = [p for n, p in model.named_parameters() if (n in decay_parameters_names and n not in si_parameters_names and p.requires_grad)]
     nondecay_params = [p for n, p in model.named_parameters() if (n not in decay_parameters_names and n not in si_parameters_names and p.requires_grad)]
     si_params = [p for n , p in model.named_parameters() if (n in si_parameters_names and p.requires_grad)]
-    si_parameters_names.append(
+    optimizer_grouped_parameters.append(
             {
             "params": si_params,
             "weight_decay": 0.0,
@@ -286,6 +286,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 model.module.config.save_pretrained(training_args.output_dir)
                 model.module.save_pretrained(training_args.output_dir)
                 tokenizer.save_pretrained(training_args.output_dir)
+                if model.module.config.head_args['head_type'] == 'BR':
+                    model.module.si.save_ema(training_args.output_dir)
 
             dist.barrier()
 

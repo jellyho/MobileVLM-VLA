@@ -390,7 +390,7 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda", dtype=
         kwargs['torch_dtype'] = dtype
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-    model = SpatialVLAForCausalLM.from_pretrained(model_path)
+    model = SpatialVLAForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=False, **kwargs)
     model.to(device)
 
     mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
@@ -421,5 +421,6 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda", dtype=
     if model.config.head_args['head_type'] == 'BR':
         action_tokenizer = ActionTokenizer(tokenizer)
         model.action_tokenizer = action_tokenizer
+        model.si.load_ema(model_path)
 
     return tokenizer, model, image_processor, dataset_statistics

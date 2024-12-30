@@ -89,8 +89,6 @@ class VLAModel:
                     images=images_tensor,
                     use_cache=True
                 )
-        print('before unnorm', action)
         action = action.cpu().numpy()[0]
         action = self.unnorm_action(unnorm_key, action)
-        print('after unnorm', action)
         return action

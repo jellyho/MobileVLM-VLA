@@ -271,10 +271,10 @@ class StochasticInterpolants(nn.Module):
         with self.ema.average_parameters():
             if self.sde_type == 'vs':
                 x_target, x_target_traj = self.sde_vs(v_net=self.net.v_net, s_net=self.net.s_net, x_initial=x_prior, cond=cond,
-                                                      delta_t=float(1.0 / diffuse_step), score_weight=1.0, direction='forward')
+                                                        delta_t=float(1.0 / diffuse_step), score_weight=1.0, direction='forward')
             elif self.sde_type == 'bs':
                 x_target, x_target_traj = self.sde_bs(b_net=self.net.b_net, s_net=self.net.s_net, x_initial=x_prior, cond=cond,
-                                                      delta_t=float(1.0 / diffuse_step), score_weight=1.0, direction='forward')
+                                                        delta_t=float(1.0 / diffuse_step), score_weight=1.0, direction='forward')
             else:
                 raise NotImplementedError
         if recod_traj:
@@ -391,7 +391,7 @@ class StochasticInterpolants(nn.Module):
 
         return x_values[-1], x_values
 
-    def load_model(self, model_args, device):
+    def load_model(self, model_args, device, ckpt_path=None):
 
         if model_args['net_type'] == 'unet1D_si':
             self.net = InterpolantsConditionalUnet1D(
@@ -402,10 +402,14 @@ class StochasticInterpolants(nn.Module):
             raise NotImplementedError
 
         self.ema = ExponentialMovingAverage(self.net.parameters(), decay=0.75)
-        if model_args['pretrain']:
-            checkpoint = torch.load(os.path.join(model_args['ckpt_path'], "model.pt"), map_location="cpu")
-            self.net.load_state_dict(checkpoint['net'])
+        if ckpt_path:
+            checkpoint = torch.load(os.path.join(ckpt_path, "si_ema.pt"), map_location="cpu") 
             self.ema.load_state_dict(checkpoint["ema"])
+
+        # if model_args['pretrain']:
+        #     checkpoint = torch.load(os.path.join(model_args['ckpt_path'], "model.pt"), map_location="cpu")
+        #     self.net.load_state_dict(checkpoint['net'])
+        #     self.ema.load_state_dict(checkpoint["ema"])
 
         self.net.to(device)
         self.ema.to(device)
@@ -420,3 +424,12 @@ class StochasticInterpolants(nn.Module):
             "net": self.net.state_dict(),
             "ema": self.ema.state_dict(),
         }, os.path.join(ckpt_path, f"model_{itr}.pt"))
+
+    def save_ema(self, ckpt_path):
+        torch.save({
+            "ema": self.ema.state_dict(),
+        }, os.path.join(ckpt_path, "si_ema.pt"))
+
+    def load_ema(self, ckpt_path):
+        checkpoint = torch.load(os.path.join(ckpt_path, "si_ema.pt"), map_location="cpu") 
+        self.ema.load_state_dict(checkpoint["ema"])
