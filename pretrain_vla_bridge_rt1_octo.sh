@@ -6,11 +6,11 @@ while :; do
     (echo >/dev/tcp/localhost/$RDZV_PORT) &>/dev/null || break
 done
 # srun --gres=gpu:$1 
-
 export OMP_NUM_THREADS=64
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 srun --job-name=br_rt1 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
-    --learning_rate 1.4e-4 \
+    --learning_rate 2e-4 \
     --lr_scheduler_type "cosine" \
     --warmup_ratio 0.05 \
     --lora_enable false \
@@ -21,7 +21,7 @@ srun --job-name=br_rt1 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_bac
     --weight_decay 1e-6 \
     --data_root_dir "/data1/OXE" \
     --data_mix "bridge_rt_1" \
-    --output_dir "checkpoints/bridge_rt1" \
+    --output_dir "checkpoints/bridge_rt1_4gpu" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \
@@ -34,6 +34,6 @@ srun --job-name=br_rt1 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_bac
     --save_steps 5000 \
     --shuffle_buffer_size 100000 \
     --batch_size 32 \
-    --image_aug false \
+    --image_aug true \
     --wandb_project "VLA_BRIDGE_RT_1" \
     --enable_autotune true

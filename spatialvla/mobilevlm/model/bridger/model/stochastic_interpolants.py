@@ -260,7 +260,7 @@ class StochasticInterpolants(nn.Module):
 
         return xt.detach(), z
 
-    def sample(self, x_prior, cond, diffuse_step=10, recod_traj=False):
+    def sample(self, x_prior, cond, diffuse_step=5, recod_traj=False):
         """
 
         :param x_prior: (batch, feature)
@@ -277,10 +277,10 @@ class StochasticInterpolants(nn.Module):
                                                         delta_t=float(1.0 / diffuse_step), score_weight=1.0, direction='forward')
             else:
                 raise NotImplementedError
-        if recod_traj:
-            return x_target, x_target_traj
-        else:
-            return x_target
+            if recod_traj:
+                return x_target, x_target_traj
+            else:
+                return x_target
 
     def sde_bs(self, b_net, s_net, x_initial, cond, delta_t=0.025, score_weight=1.0, direction='forward'):
         # Number of steps and samples

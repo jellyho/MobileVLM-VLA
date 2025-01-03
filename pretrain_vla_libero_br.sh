@@ -9,7 +9,7 @@ done
 
 export OMP_NUM_THREADS=64
 
-srun --job-name=lib_$2 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
+srun --job-name=lib_$2 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain_libero.py \
     --learning_rate 1e-4 \
     --lr_scheduler_type "cosine" \
     --warmup_ratio 0.05 \

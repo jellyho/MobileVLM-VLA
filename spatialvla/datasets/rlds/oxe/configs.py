@@ -60,6 +60,7 @@ vla_benchmark_config = {
 # === Individual Dataset Configs ===
 OXE_DATASET_CONFIGS = {
     'vla_benchmark_joint': vla_benchmark_config,
+    'vla_benchmark_ee': vla_benchmark_config,
     'vla_benchmark_5hz': vla_benchmark_config,
     'vla_benchmark': vla_benchmark_config,
     'bm_pick_tape_single':vla_benchmark_config,

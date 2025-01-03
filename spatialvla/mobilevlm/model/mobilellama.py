@@ -189,7 +189,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                 loss_args = {'prior_policy':'tokenized_action'}
                 denoising_loss, loss_info = self.si.get_loss(batch_dict, loss_args, actions.device)
                 ce_loss = loss.detach()
-                loss = loss + denoising_loss# Hard coded
+                loss = loss + denoising_loss
 
                 ## For conditioning token, apply attention mask, and choose fial embedding to feed in.
                 return CausalLMOutputWithPast(
@@ -347,26 +347,19 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                 use_cache=True,
                 do_sample=False,
                 num_beams=1,
-                top_p=None,
-                # return_dict_in_generate=True,
-                # output_hidden_states=True,
-                
-            )        
-            # hidden = torch.cat([output.hidden_states[h][-1] for h in range(self.config.action_len)], axis=1)
-            # condition = self.condition_projector(hidden)
-            # # print(condition.shape, hidden.shape)
+                top_p=None,                
+            )
             
             action_token = output_ids[:, -self.config.action_len:].cpu()
             prior_actions = torch.tensor(self.action_tokenizer.detokenize(action_token), device=input_ids.device)
-            # new_input_ids = output_ids
 
             model_actions = self.predict_action(
                 input_ids=output_ids,
                 images=images,
+                use_cache=True,
                 prior_actions=prior_actions,
                 num_denoise_steps=num_denoise_steps
             )
-            # print(prior_action.shape)
             # model_actions = self.si.sample(x_prior=prior_action.to(dtype=torch.bfloat16), cond=condition.float().flatten(1), diffuse_step=5)
         return model_actions
 

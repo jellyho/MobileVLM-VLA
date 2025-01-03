@@ -9,7 +9,7 @@ import tensorflow as tf
 from libero.libero import get_libero_path
 from libero.libero.envs import OffScreenRenderEnv
 
-from robot_utils import (
+from spatialvla.simulation.robot_utils import (
     DATE,
     DATE_TIME,
 )

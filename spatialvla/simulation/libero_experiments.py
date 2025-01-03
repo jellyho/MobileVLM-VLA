@@ -15,14 +15,14 @@ from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 
 # Append current directory so that interpreter can find experiments.robot
 # sys.path.append("../..")
-from libero_utils import (
+from spatialvla.simulation.libero_utils import (
     get_libero_dummy_action,
     get_libero_env,
     get_libero_image,
     quat2axisangle,
     save_rollout_video,
 )
-from robot_utils import (
+from spatialvla.simulation.robot_utils import (
     DATE_TIME,
     get_image_resize_size,
     invert_gripper_action,

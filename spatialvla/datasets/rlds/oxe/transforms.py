@@ -1025,6 +1025,7 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     'vla_benchmark_5hz': lg_delta_ee_transform,
     'vla_benchmark': lg_delta_ee_transform,
     'vla_benchmark_joint': lg_joint_pos_transform,
+    'vla_benchmark_ee': lg_ee_pos_transform,
     'bm_pick_tape_single': lg_delta_ee_transform,
     'bm_move_bowl': lg_delta_ee_transform,
     'bm_move_tape': lg_delta_ee_transform,

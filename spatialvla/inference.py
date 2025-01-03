@@ -75,6 +75,7 @@ class VLAModel:
         stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
         # Input
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
+        print(input_ids)
         if self.model.config.head_args['head_type'] == 'BR':
             with torch.inference_mode():
                 action = self.model.predict_action_br(

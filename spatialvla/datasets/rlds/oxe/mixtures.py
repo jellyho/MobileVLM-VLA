@@ -34,7 +34,6 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
     "bridge_rt_1": [
         # ("bridge_oxe", 1.0)                                   # Version of Bridge V2 in Open-X GCP Bucket
         ("bridge_oxe", 1.0),                                   # Original Version of Bridge V2 from Project Website
-
         ("fractal20220817_data", 0.54087122203),                          # Google RT-1 Robot Data (Large-Scale)
     ],
 
@@ -67,7 +66,6 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
         ("viola", 2.0),
         ("berkeley_autolab_ur5", 1.0),
         ("toto", 1.0),
-
         ("taco_play", 1.0),
         ("berkeley_cable_routing", 1.0),
         ("viola", 1.0),
@@ -121,14 +119,14 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
 
     # === Open-X Magic Soup++ ===
     "oxe_magic_soup_plus": [
-        ("fractal20220817_data", 0.54087122203),                # Google RT-1 Robot Data (Large-Scale)
-        ("kuka", 0.8341046294),
-        ("bridge_orig", 1.0),                                   # Original Version of Bridge V2 from Project Website
-        ("taco_play", 2.0),
-        ("jaco_play", 1.0),
-        ("berkeley_cable_routing", 1.0),
-        ("roboturk", 2.0),
-        ("viola", 2.0),
+        ("fractal20220817_data", 0.54087122203),  #              # Google RT-1 Robot Data (Large-Scale)
+        ("kuka", 0.8341046294), #
+        ("bridge_orig", 1.0), #                                  # Original Version of Bridge V2 from Project Website
+        ("taco_play", 2.0), #
+        ("jaco_play", 1.0), #
+        ("berkeley_cable_routing", 1.0), #
+        ("roboturk", 2.0), #
+        ("viola", 2.0), #
         ("berkeley_autolab_ur5", 2.0),
         ("toto", 1.0),
         ("language_table", 0.1),
@@ -145,10 +143,10 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
         ("berkeley_fanuc_manipulation", 2.0),
         ("cmu_stretch", 1.0),
         ## New Datasets in MagicSoup++
-        ("bc_z", 0.2),                                          # Note: use v0.1.0 --> later versions broken
+        ("bc_z", 0.2),         #                                 # Note: use v0.1.0 --> later versions broken
         ("fmb_dataset", 1.0),
         ("dobbe", 0.2),
-        ("droid", 0.06),
+        ("droid", 0.06), #
     ],
 
     "oxe_magic_soup_plus_minus": [

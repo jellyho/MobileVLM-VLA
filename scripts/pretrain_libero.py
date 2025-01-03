@@ -27,6 +27,7 @@ from spatialvla.mobilevlm.train.train import find_all_linear_names, get_peft_sta
 from spatialvla_config import ModelArguments, TrainingArguments, HEAD_ARGS
 from mergelora import merge_lora
 from spatialvla.mobilevlm.action_tokenizer import ActionTokenizer
+from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 from spatialvla.mobilevlm.conversation import conv_templates, SeparatorStyle
 from spatialvla.mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
 from spatialvla.mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
@@ -114,6 +115,28 @@ dataloader = DataLoader(
     collate_fn=collator,
     num_workers=0,  # Important =>> Set to 0 if using RLDS; TFDS rolls its own parallelism!
 )
+
+from libero.libero import benchmark
+from spatialvla.simulation.libero_utils import (
+    get_libero_dummy_action,
+    get_libero_env,
+    get_libero_image,
+    quat2axisangle,
+    save_rollout_video,
+)
+from spatialvla.simulation.robot_utils import (
+    DATE_TIME,
+    get_image_resize_size,
+    invert_gripper_action,
+    normalize_gripper_action,
+    set_seed_everywhere,
+)
+task_name = 'libero_goal'
+benchmark_dict = benchmark.get_benchmark_dict()
+task_suite = benchmark_dict[task_name]()
+num_tasks_in_suite = task_suite.n_tasks
+resize_size = 224
+
 
 # Save statistics to a JSON file
 if not os.path.exists(training_args.output_dir):
@@ -270,6 +293,82 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')
                 log_dict['action_loss'] = action_loss.item()
                 log_dict['pred_time'] = prediction_time
+                        
+        if distributed_state.is_main_process and  gradient_step_idx % 500 == 0:
+            replay_images = []
+            for task_id in range(10):
+                task = task_suite.get_task(task_id)
+                initial_states = task_suite.get_task_init_states(task_id)
+                env, task_description = get_libero_env(task, 'opnevla', resolution=256)
+                env.reset()
+                obs = env.set_init_state(initial_states[0])
+                action_counter = 0
+                t = 0
+                if task_name == "libero_spatial":
+                    max_steps = 220  # longest training demo has 193 steps
+                elif task_name == "libero_object":
+                    max_steps = 280  # longest training demo has 254 steps
+                elif task_name == "libero_goal":
+                    max_steps = 300  # longest training demo has 270 steps
+                elif task_name == "libero_10":
+                    max_steps = 520  # longest training demo has 505 steps
+                elif task_name == "libero_90":
+                    max_steps = 400  # longest training demo has 373 steps
+                while t < max_steps + 10:
+                    if t < 10:
+                        obs, reward, done, info = env.step(get_libero_dummy_action('openvla'))
+                        t += 1
+                        continue
+                    img = get_libero_image(obs, resize_size)
+                    replay_images.append(img)
+                    if action_counter == 0:
+                        images = [Image.fromarray(img)]
+                        # Check whether this process_images is same as dataset
+                        images_tensor = process_images(images, image_processor, {'image_aspect_ratio' : 'pad'}).to(model.device, dtype=torch.bfloat16)
+                        prompt = f'What action should the robot take to {task_description}?'
+                        conv = conv_templates['v1'].copy() # Hard-coded
+                        conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
+                        conv.append_message(conv.roles[1], None)
+                        prompt = conv.get_prompt()
+                        stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
+                        input_ids = (tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
+                        with torch.autocast('cuda', dtype=dtype):
+                            with torch.inference_mode():
+                                if model.module.config.head_args['head_type'] == 'BR':
+                                    action = model.module.predict_action_br(
+                                        input_ids=input_ids,
+                                        images=images_tensor,
+                                        num_denoise_steps=5
+                                    )
+                                else:
+                                    action = model.module.predict_action(
+                                        input_ids=input_ids,
+                                        images=images_tensor,
+                                        use_cache=True
+                                    )
+                        action = action.cpu().numpy()[0]
+                        unnorm_key = 'libero_goal_no_noops'
+                        mask = dataset.dataset_statistics[unnorm_key]['action']['mask']
+                        action_chunk = np.where(
+                            mask,  # Condition: apply unnormalization where mask is True
+                            action * dataset.dataset_statistics[unnorm_key]['action']['std'] + dataset.dataset_statistics[unnorm_key]['action']['mean'],  # Unnormalized action
+                            action  # Original action where mask is False
+                        )
+                    action = action_chunk[action_counter]
+                    action = normalize_gripper_action(action, binarize=True)
+                    action = invert_gripper_action(action)
+                    obs, reward, done, info = env.step(action.tolist())
+                    if done:
+                        break
+                    t += 1
+                    action_counter += 1
+                    if action_counter == model_args.action_len:
+                        action_counter = 0
+            fps = 30
+            video_clip = ImageSequenceClip(replay_images, fps=fps)
+            output_video = "output.mp4"
+            video_clip.write_videofile(output_video, codec="libx264", audio=False)
+            wandb.log({"video": wandb.Video(output_video, fps=fps, format="mp4")})
 
         if distributed_state.is_main_process:
             log_dict['loss'] = normalized_loss.item()

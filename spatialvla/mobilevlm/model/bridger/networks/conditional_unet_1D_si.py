@@ -6,7 +6,7 @@ class InterpolantsConditionalUnet1D(nn.Module):
                  input_dim,
                  global_cond_dim,
                  diffusion_step_embed_dim=256,
-                 down_dims=[256, 512, 512],
+                 down_dims=[256, 512, 512, 512],
                  kernel_size=5,
                  n_groups=8
                  ):
