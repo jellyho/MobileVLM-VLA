@@ -5,11 +5,11 @@ while :; do
     # Check if the port is available
     (echo >/dev/tcp/localhost/$RDZV_PORT) &>/dev/null || break
 done
-# srun --gres=gpu:$1 
-export OMP_NUM_THREADS=64
-export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
-srun --job-name=br_rt1 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
+export OMP_NUM_THREADS=100
+
+# srun --gres=gpu:$1 
+srun --job-name=fm_$2 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
     --learning_rate 1e-4 \
     --lr_scheduler_type "cosine" \
     --warmup_ratio 0.05 \
@@ -19,21 +19,21 @@ srun --job-name=br_rt1 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_bac
     --lora_dropout 0.01 \
     --use_rslora false \
     --weight_decay 1e-6 \
-    --data_root_dir "/data1/OXE" \
-    --data_mix "fractal20220817_data" \
-    --output_dir "checkpoints/rt1_512_16_1gpu" \
+    --data_root_dir "/home/shared/rlds_datasets" \
+    --data_mix "libero_$2_no_noops" \
+    --output_dir "checkpoints/libero_$2_fm" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \
-    --action_head "Diffusion" \
+    --action_head "FlowMatching" \
     --action_dim 7 \
-    --action_len 16 \
+    --action_len 8 \
     --use_state_input false \
     --state_dim 8 \
     --max_steps 50000 \
     --save_steps 5000 \
-    --shuffle_buffer_size 100000 \
+    --shuffle_buffer_size 20000 \
     --batch_size 32 \
-    --image_aug true \
-    --wandb_project "VLA_BRIDGE_RT_1" \
+    --image_aug false \
+    --wandb_project "VLA_LIBERO_FM" \
     --enable_autotune true

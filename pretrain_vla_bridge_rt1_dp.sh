@@ -7,7 +7,7 @@ while :; do
 done
 # srun --gres=gpu:$1 
 export OMP_NUM_THREADS=64
-export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+# export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 srun --job-name=br_rt1 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
     --learning_rate 1e-4 \
@@ -21,13 +21,13 @@ srun --job-name=br_rt1 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_bac
     --weight_decay 1e-6 \
     --data_root_dir "/data1/OXE" \
     --data_mix "fractal20220817_data" \
-    --output_dir "checkpoints/rt1_512_16_1gpu" \
+    --output_dir "checkpoints/rt1_dp_1gpu" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \
-    --action_head "Diffusion" \
+    --action_head "DiffusionPolicy" \
     --action_dim 7 \
-    --action_len 16 \
+    --action_len 8 \
     --use_state_input false \
     --state_dim 8 \
     --max_steps 50000 \

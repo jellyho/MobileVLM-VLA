@@ -57,8 +57,17 @@ vla_benchmark_config = {
     "action_encoding": ActionEncoding.EEF_POS,
 }
 
+vla_benchmark_bimanual_config = {
+    "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
+    "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+    "state_obs_keys": ["joint_pos"],
+    "state_encoding": StateEncoding.JOINT_BIMANUAL,
+    "action_encoding": ActionEncoding.JOINT_POS_BIMANUAL,
+}
+
 # === Individual Dataset Configs ===
 OXE_DATASET_CONFIGS = {
+    'transfer_tissue': vla_benchmark_bimanual_config,
     'vla_benchmark_joint': vla_benchmark_config,
     'vla_benchmark_ee': vla_benchmark_config,
     'vla_benchmark_5hz': vla_benchmark_config,

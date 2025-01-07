@@ -8,6 +8,7 @@ import numpy as np
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
 
 from spatialvla.mobilevlm.model.mobilevlm import load_vla, load_pretrained_model
+from spatialvla.mobilevlm.model.bimanual import load_twinvla_from_singlevla
 from spatialvla.mobilevlm.conversation import conv_templates, SeparatorStyle
 from spatialvla.mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
 from spatialvla.mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
@@ -17,6 +18,7 @@ class VLAModel:
     def __init__(self, model_path, dtype=torch.bfloat16):
         disable_torch_init()
         self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_vla(model_path=model_path, dtype=dtype)
+        # self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_twinvla_from_singlevla(single_model_path=model_path, dtype=dtype)
         self.dtype = dtype
         # self.tokenizer, self.model, self.image_processor, _ = load_pretrained_model(model_path)
 
@@ -75,7 +77,7 @@ class VLAModel:
         stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
         # Input
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
-        print(input_ids)
+        # print(input_ids)
         if self.model.config.head_args['head_type'] == 'BR':
             with torch.inference_mode():
                 action = self.model.predict_action_br(
@@ -91,5 +93,6 @@ class VLAModel:
                     use_cache=True
                 )
         action = action.cpu().numpy()[0]
+        # action = action[:, :7]
         action = self.unnorm_action(unnorm_key, action)
         return action

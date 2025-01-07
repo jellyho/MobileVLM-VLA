@@ -19,8 +19,8 @@ srun --gres=gpu:$1 --job-name=vla_bench torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_
     --use_rslora false \
     --weight_decay 1e-6 \
     --data_root_dir "/home/shared/vla_benchmark_rlds" \
-    --data_mix "vla_benchmark_ee" \
-    --output_dir "checkpoints/vla_benchmark_dp_full_$1gpu_v2" \
+    --data_mix "vla_benchmark" \
+    --output_dir "checkpoints/vla_benchmark_dp_$1gpu_v2" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \

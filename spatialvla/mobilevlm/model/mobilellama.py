@@ -44,7 +44,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
     config_class = SpatialVLAConfig
 
     def __init__(self, config):
-        super(LlamaForCausalLM, self).__init__(config)
+        super(SpatialVLAForCausalLM, self).__init__(config)
 
         self.model = SpatialVLAModel(config)
         # For compatibility, lm_head is only used for token embedding resizing

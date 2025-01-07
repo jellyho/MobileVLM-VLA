@@ -28,28 +28,13 @@ DiffusionHead = {
     'use_map' : False,
     'max_action': 5.0,
     'time_dim':  32,
-    'num_blocks': 3,
+    'num_blocks': 6,
     'dropout_rate': 0.0,
-    'hidden_dim': 512,
+    'hidden_dim': 256,
     'use_layer_norm':True,
     'diffusion_steps': 20,
     'n_diffusion_samples': 1,
 }
-
-FlowMatchingHead = {
-    'head_type': 'Diffusion',
-    'hidden_projection': 'pass', # If use_map is true, set this to pass
-    'use_map' : False,
-    'max_action': 5.0,
-    'time_dim':  32,
-    'num_blocks': 3,
-    'dropout_rate': 0.0,
-    'hidden_dim': 512,
-    'use_layer_norm':True,
-    'diffusion_steps': 10,
-    'n_diffusion_samples': 1,
-}
-
 
 DiffusionPolicyHead = {
     'head_type': 'DiffusionPolicy',
@@ -98,17 +83,17 @@ HEAD_ARGS = {
     'Diffusion': DiffusionHead,
     'DiffusionPolicy': DiffusionPolicyHead,
     'DiT': DiT,
-    'BR': BR,
-    'FlowMatching' : FlowMatchingHead
+    'BR': BR
 }
 
 @dataclass
 class ModelArguments:
-    model_path: Optional[str] = field(default="remyxai/SpaceLLaVA-lite")
+    single_model_path: Optional[str] = field(default="remyxai/SpaceLLaVA-lite")
+    single_model_config: Optional[str] = field(default="remyxai/SpaceLLaVA-lite")
     action_head: str = field(default='BR')
     head_args: Dict[str, Any] = field(default_factory=lambda: BR) 
     action_dim: int = field(default=7)
-    action_len: int = field(default=1)
+    action_len: int = field(default=8)
     use_state_input: bool = field(default=False)
     state_dim: int = field(default=8)
 
