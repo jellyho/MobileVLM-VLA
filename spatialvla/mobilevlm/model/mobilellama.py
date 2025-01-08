@@ -9,7 +9,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler 
 from spatialvla.mobilevlm.model.mobilevlm import MobileVLMMetaModel, MobileVLMMetaForCausalLM
 from spatialvla.mobilevlm.model.action_heads import MLPHead, ContinuousActionHead, MAPHead
-from spatialvla.mobilevlm.model.diffusion_heads import DiffusionActionHead, DiffusionPolicyHead, DiTModules
+from spatialvla.mobilevlm.model.diffusion_heads import DiffusionActionHead, DiffusionPolicyHead, DiTModules, FlowMatchingActionHead, DiffusionPolicyHead2, FlowMatchingDiffusionPolicyHead
 from spatialvla.mobilevlm.action_tokenizer import ActionTokenizer
 from spatialvla.mobilevlm.model.bridger.model.stochastic_interpolants import StochasticInterpolants
 
@@ -81,6 +81,19 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                     nn.Parameter(torch.empty(1, config.action_len, config.hidden_size), requires_grad=True),
                 )
                 nn.init.xavier_uniform_(self.action_pos.data)
+            elif config.head_args['head_type'] == 'FlowMatching':
+                self.action_head = FlowMatchingActionHead(
+                    config.head_args,
+                    config.hidden_size,
+                    config.action_len,
+                    config.action_dim,
+                    self.model.dtype
+                )
+                self.register_parameter(
+                    "action_pos",
+                    nn.Parameter(torch.empty(1, config.action_len, config.hidden_size), requires_grad=True),
+                )
+                nn.init.xavier_uniform_(self.action_pos.data)
             elif config.head_args['head_type'] == 'DiffusionPolicy':
                 self.action_head = DiffusionPolicyHead(
                     config.head_args,
@@ -89,6 +102,32 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                     config.action_dim,
                     self.model.dtype
                 )
+            elif config.head_args['head_type'] == 'DiffusionPolicy2':
+                self.action_head = DiffusionPolicyHead2(
+                    config.head_args,
+                    config.hidden_size,
+                    config.action_len,
+                    config.action_dim,
+                    self.model.dtype
+                )
+                self.register_parameter(
+                    "action_pos",
+                    nn.Parameter(torch.empty(1, config.action_len, config.hidden_size), requires_grad=True),
+                )
+                nn.init.xavier_uniform_(self.action_pos.data)
+            elif config.head_args['head_type'] == 'FlowMatchingDiffusionPolicy':
+                self.action_head = FlowMatchingDiffusionPolicyHead(
+                    config.head_args,
+                    config.hidden_size,
+                    config.action_len,
+                    config.action_dim,
+                    self.model.dtype
+                )
+                self.register_parameter(
+                    "action_pos",
+                    nn.Parameter(torch.empty(1, config.action_len, config.hidden_size), requires_grad=True),
+                )
+                nn.init.xavier_uniform_(self.action_pos.data)
             elif config.head_args['head_type'] == 'DiT':
                 self.action_head = DiTModules(
                     config.action_dim, 
@@ -142,7 +181,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             additional_modality.append(self.get_state_embeds(states))
 
         ## Prepare action positional token ## TURN OFF for older verison of octo policy
-        if self.config.head_args['head_type'] == 'Diffusion':
+        if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMathingDiffusionPolicy']:
             additional_modality.append(self.get_action_pos_embeds(input_ids.shape[0]))
         
         # Prepare language, image , addtional tokens
@@ -217,7 +256,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             action_hidden = hidden # [batch, token_num, dim]
         
         # Action decoding
-        if self.config.head_args['head_type'] == 'Diffusion':
+        if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMatchingDiffusionPolicy']:
             loss = self.action_head.loss(action_hidden, actions, attention_mask=attention_mask)
         elif self.config.head_args['head_type'] == 'DiffusionPolicy':
             loss = self.action_head.loss(action_hidden, actions)
@@ -252,7 +291,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             additional_modality.append(self.get_state_embeds(states))
 
         ## Prepare action positional token ## TURN OFF for older verison of octo policy
-        if self.config.head_args['head_type'] == 'Diffusion':
+        if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMatchingDiffusionPolicy']:
             additional_modality.append(self.get_action_pos_embeds(input_ids.shape[0]))
             
         if self.config.head_args['head_type'] == 'DiT':
@@ -310,7 +349,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             elif self.config.head_args['hidden_projection'] == 'pass':
                 action_hidden = hidden # [batch, token_num, dim]
             
-            if self.config.head_args['head_type'] == 'Diffusion':
+            if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMatchingDiffusionPolicy']:
                 predicted_action = self.action_head.predict_action(action_hidden, attention_mask=attention_mask)
             elif self.config.head_args['head_type'] == 'DiffusionPolicy':
                 predicted_action = self.action_head.predict_action(action_hidden)

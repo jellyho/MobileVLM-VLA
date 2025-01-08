@@ -131,7 +131,7 @@ from spatialvla.simulation.robot_utils import (
     normalize_gripper_action,
     set_seed_everywhere,
 )
-task_name = 'libero_goal'
+task_name = 'libero_10'
 benchmark_dict = benchmark.get_benchmark_dict()
 task_suite = benchmark_dict[task_name]()
 num_tasks_in_suite = task_suite.n_tasks
@@ -347,7 +347,7 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                                         use_cache=True
                                     )
                         action = action.cpu().numpy()[0]
-                        unnorm_key = 'libero_goal_no_noops'
+                        unnorm_key = 'libero_10_no_noops'
                         mask = dataset.dataset_statistics[unnorm_key]['action']['mask']
                         action_chunk = np.where(
                             mask,  # Condition: apply unnormalization where mask is True

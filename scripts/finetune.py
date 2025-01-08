@@ -28,7 +28,7 @@ from mergelora import merge_lora
 
 tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to gpu
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["WANDB_MODE"] = "dryrun"
+os.environ["WANDB_MODE"] = "online"
 
 distributed_state = PartialState()
 device_id = distributed_state.local_process_index
@@ -68,7 +68,12 @@ print('Pretrained VLM Loaded')
 batch_transform = RLDSBatchTransform(
     tokenizer,
     image_processor,
+    use_state_input=model_args.use_state_input,
+    action_tokenizer=action_tokenizer,
+    window_size=1,
+    future_action_window_size=model_args.action_len - 1
 )
+
 
 dataset = RLDSDataset(
     data_root_dir=training_args.data_root_dir,
@@ -78,12 +83,20 @@ dataset = RLDSDataset(
     train=True,
     window_size=1,
     future_action_window_size=model_args.action_len - 1,
-    enable_autotune=training_args.enable_autotune
+    enable_autotune=training_args.enable_autotune,
+    use_state_input=model_args.use_state_input
 )
 
 # sampler = DistributedSampler(dataset)
 
-collator = PaddedCollatorForActionPrediction(tokenizer.model_max_length, tokenizer.pad_token_id, padding_side='right')
+collator = PaddedCollatorForActionPrediction(
+    tokenizer.model_max_length, 
+    tokenizer.pad_token_id, 
+    padding_side='right',
+    use_state_input=model_args.use_state_input,
+    use_label=(model.config.head_args['head_type'] == 'BR')
+)
+
 
 dataloader = DataLoader(
     dataset,
@@ -93,8 +106,12 @@ dataloader = DataLoader(
     num_workers=0,  # Important =>> Set to 0 if using RLDS; TFDS rolls its own parallelism!
 )
 # Save statistics to a JSON file
+# Save statistics to a JSON file
 if not os.path.exists(training_args.output_dir):
-    os.makedirs(training_args.output_dir)
+    try:
+        os.makedirs(training_args.output_dir)
+    except:
+        pass
 if distributed_state.is_main_process:
     save_dataset_statistics(dataset.dataset_statistics, training_args.output_dir)
 temp_dir = f'{training_args.output_dir}_tmp'
@@ -161,22 +178,41 @@ print('LoRA Loaded')
 
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
 decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
-decay_parameters = [name for name in decay_parameters if "bias" not in name]
-unused_parameters = [name for name, _ in model.named_parameters() if "vision_tower" in name and "layers" not in name]
-optimizer_grouped_parameters = [
+decay_parameters_names = [name for name in decay_parameters if "bias" not in name]
+optimizer_grouped_parameters = []
+if model.module.config.head_args['head_type'] == 'BR':
+    si_parameters_names = []
+    for n, p in model.named_parameters():
+        if 'si.' in n:
+            si_parameters_names.append(n)
+    decay_params = [p for n, p in model.named_parameters() if (n in decay_parameters_names and n not in si_parameters_names and p.requires_grad)]
+    nondecay_params = [p for n, p in model.named_parameters() if (n not in decay_parameters_names and n not in si_parameters_names and p.requires_grad)]
+    si_params = [p for n , p in model.named_parameters() if (n in si_parameters_names and p.requires_grad)]
+    optimizer_grouped_parameters.append(
+            {
+            "params": si_params,
+            "weight_decay": 0.0,
+            "lr": 5e-6,
+            "eps":training_args.adam_epsilon,
+        }
+    )
+else:    
+    decay_params = [p for n, p in model.named_parameters() if (n in decay_parameters_names and p.requires_grad)]
+    nondecay_params = [p for n, p in model.named_parameters() if (n not in decay_parameters_names and p.requires_grad)]
+optimizer_grouped_parameters.extend([
     {
-        "params": [p for n, p in model.named_parameters() if (n in decay_parameters and n not in unused_parameters and p.requires_grad)],
+        "params": decay_params,
         "weight_decay": training_args.weight_decay,
         "lr": training_args.learning_rate,
         "eps":training_args.adam_epsilon,
     },
     {
-        "params": [p for n, p in model.named_parameters() if (n not in decay_parameters and n not in unused_parameters and p.requires_grad)],
+        "params": nondecay_params,
         "weight_decay": 0.0,
         "lr": training_args.learning_rate,
         "eps":training_args.adam_epsilon
     },
-]
+])
 optimizer = AdamW(optimizer_grouped_parameters)
 
 if training_args.lr_scheduler_type == 'linear':
@@ -211,6 +247,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 images=batch['pixel_values'].to(device_id),
                 attention_mask=batch['attention_mask'].to(device_id),
                 actions=batch['action'].to(device_id),
+                states=batch['proprio'] if model_args.use_state_input else None,
+                labels=batch['labels'] if model.module.config.head_args['head_type'] == 'BR' else None
             )
         normalized_loss = loss / training_args.gradient_accumulation_steps
         normalized_loss.backward()
@@ -249,7 +287,9 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                         input_ids=batch['input_ids'].to(device_id),
                         images=batch['pixel_values'].to(device_id),
                         attention_mask=batch['attention_mask'].to(device_id),
-                        use_cache=True
+                        use_cache=True,
+                        states=batch['proprio'] if model_args.use_state_input else None,
+                        prior_actions=batch['action'].to(device_id)
                     )
                     prediction_time = float(time.time() - start)
                 action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')
@@ -277,22 +317,5 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
         if gradient_step_idx >= training_args.max_steps:
             print(f"Max step {training_args.max_steps} reached! Stopping training...")
             break
-           
 
-# Save configs and state_dicts into temp dir
-if distributed_state.is_main_process:
-    print(f"Saving Model Checkpoint for Step {gradient_step_idx}")
-
-    model.module.config.save_pretrained(temp_dir)
-    state_dict = get_peft_state_maybe_zero_3(model.module.named_parameters(), training_args.lora_bias)
-    non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.module.named_parameters())
-    model.module.save_pretrained(temp_dir, state_dict=state_dict)
-    torch.save(non_lora_state_dict, os.path.join(temp_dir, 'non_lora_trainables.bin'))
-
-    # Merge lora model into output dir
-    merge_lora(model_args.model_path, temp_dir, training_args.output_dir)
-
-dist.barrier()
 print('Checkpoint Saved. Finished.')
-
-nvmlShutdown()

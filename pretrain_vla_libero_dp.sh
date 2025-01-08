@@ -6,7 +6,7 @@ while :; do
     (echo >/dev/tcp/localhost/$RDZV_PORT) &>/dev/null || break
 done
 # srun --gres=gpu:$1 
-export OMP_NUM_THREADS=16
+export OMP_NUM_THREADS=64
 
 srun --job-name=lib_$2 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
     --learning_rate 1e-4 \
@@ -20,7 +20,7 @@ srun --job-name=lib_$2 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_bac
     --weight_decay 1e-6 \
     --data_root_dir "/home/shared/rlds_datasets" \
     --data_mix "libero_$2_no_noops" \
-    --output_dir "checkpoints/libero_$2_dp_full" \
+    --output_dir "checkpoints/libero_$2_dp_v2" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \

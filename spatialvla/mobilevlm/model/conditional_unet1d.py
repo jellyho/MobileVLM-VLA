@@ -170,9 +170,9 @@ class ConditionalUnet1D(nn.Module):
         )
 
     def forward(self, 
-            global_cond,
             sample, 
             timestep, 
+            global_cond=None,
             local_cond=None,  **kwargs):
         """
         x: (B,T,input_dim)
@@ -202,22 +202,24 @@ class ConditionalUnet1D(nn.Module):
         
         # encode local features
         h_local = list()
-        # if local_cond is not None:
-        #     local_cond = einops.rearrange(local_cond, 'b h t -> b t h')
-        #     resnet, resnet2 = self.local_cond_encoder
-        #     x = resnet(local_cond, global_feature)
-        #     h_local.append(x)
-        #     x = resnet2(local_cond, global_feature)
-        #     h_local.append(x)
+        if local_cond is not None:
+            local_cond = einops.rearrange(local_cond, 'b h t -> b t h')
+            resnet, resnet2 = self.local_cond_encoder
+            x = resnet(local_cond, global_feature)
+            h_local.append(x)
+            x = resnet2(local_cond, global_feature)
+            h_local.append(x)
         
         x = sample
         h = []
         for idx, (resnet, resnet2, downsample) in enumerate(self.down_modules):
             # print(x.shape, global_feature.shape)
             x = resnet(x, global_feature)
+            # print('down', x.shape)
             if idx == 0 and len(h_local) > 0:
                 x = x + h_local[0]
             x = resnet2(x, global_feature)
+            # print('down h', x.shape)
             h.append(x)
             x = downsample(x)
 
@@ -225,17 +227,21 @@ class ConditionalUnet1D(nn.Module):
             x = mid_module(x, global_feature)
 
         for idx, (resnet, resnet2, upsample) in enumerate(self.up_modules):
-            # print(x.shape, h[-1].shape)
+            # print('up', x.shape, h[-1].shape)
             x = torch.cat((x, h.pop()), dim=1)
+            # print('up_resent1', x.shape)
             x = resnet(x, global_feature)
+            # print('up_resnet', x.shape)
             # The correct condition should be:
             # if idx == (len(self.up_modules)-1) and len(h_local) > 0:
-            # However this change will break compatibility with published checkpoints.
-            # Therefore it is left as a comment.
+            # print(idx, len(self.up_modules) - 1)
+            x = upsample(x)
             if idx == (len(self.up_modules) - 1) and len(h_local) > 0:
+                # print('up-', x.shape, h_local[1].shape)
                 x = x + h_local[1]
             x = resnet2(x, global_feature)
-            x = upsample(x)
+            # print('up_resne2t', x.shape)
+            
 
         x = self.final_conv(x)
 
