@@ -6,7 +6,7 @@ from spatialvla.inference import VLAModel
 from PIL import Image
 
 # task_name = "google_robot_pick_coke_can"  # @param ["google_robot_pick_coke_can", "google_robot_move_near", "google_robot_open_drawer", "google_robot_close_drawer", "widowx_spoon_on_towel", "widowx_carrot_on_plate", "widowx_stack_cube", "widowx_put_eggplant_in_basket"]
-checkpoint = "checkpoints/rt1_dp_1gpu"
+checkpoint = "checkpoints/rt1_512_16_1gpu"
 
 model = VLAModel(checkpoint)
 rollout_per_env = 2
@@ -51,8 +51,8 @@ for task_name in tasks:
             chunk_stack += 1
             if chunk_stack == 8:
                 chunk_stack = 0
-            # print(action[-1])
-            # action[-1] = action[-1] - 0.5
+            # print(action)
+            action[-1] = action[-1] * 2.0 - 1.0
             obs, reward, done, truncated, info = env.step(action)
             frames.append(image)
 

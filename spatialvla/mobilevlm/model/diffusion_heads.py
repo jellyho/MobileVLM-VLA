@@ -216,8 +216,8 @@ class DiffusionActionHead(nn.Module):
 
         if self.use_map:
             self.map = MAPHead(in_dim, num_heads=1, num_readouts=1)
-        # self.proj = nn.Linear(in_dim, self.hidden_dim)
-        self.proj = ConditionProjector(in_dim=in_dim, out_dim=self.hidden_dim)
+        self.proj = nn.Linear(in_dim, self.hidden_dim)
+        # self.proj = ConditionProjector(in_dim=in_dim, out_dim=self.hidden_dim)
         
         self.scheduler = DDPMScheduler(
             num_train_timesteps=self.diffusion_steps,
