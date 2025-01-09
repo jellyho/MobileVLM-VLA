@@ -148,7 +148,7 @@ class TwinVLAModel:
             outputs = outputs[: -len(stop_str)]
         return f"{outputs.strip()}"
 
-    def inference_action(self, unnorm_key, image, prompt, state=None):
+    def inference_action(self, unnorm_key, image, prompt, state=None, output_attn=False):
         images = [image]
         # Check whether this process_images is same as dataset
         images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=self.dtype)
@@ -173,10 +173,17 @@ class TwinVLAModel:
                 action = self.model.predict_action(
                     input_ids=input_ids,
                     images=images_tensor,
-                    use_cache=True
+                    use_cache=True,
+                    output_attn=output_attn
                 )
+        if output_attn:
+            attn = action[1]
+            action = action[0]
         action = action.cpu().numpy()[0]
         # action = action[:, :7]
         action = self.unnorm_action(unnorm_key, action)
+
+        if output_attn:
+            return action, attn
         return action
 

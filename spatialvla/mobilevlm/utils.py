@@ -221,3 +221,28 @@ def pretty_print_semaphore(semaphore):
     if semaphore is None:
         return "None"
     return f"Semaphore(value={semaphore._value}, locked={semaphore.locked()})"
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+def attn_viz_array(attn_mat, width, head=0):
+    seq_len = attn[0].shape[-1]
+    half_len = seq_len // 2
+    matrix_list = torch.zeros((16 , 24, half_len))
+    for i in range(24):
+        for h in range(16):
+            matrix_list[h, i] = attn_mat[i][0, h][half_len-1, half_len:]
+    matrix_list = matrix_list.detach().cpu().numpy()
+    seq_len = matrix_list.shape[-1]
+    layers = 24
+    dpi = 100
+    figsize = (width / dpi, width / seq_len * layers / dpi)
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+    ax.imshow(matrix_list[head], vmin=0.0, vmax=0.01, interpolation='nearest')
+    ax.axis('off')
+    fig.tight_layout(pad=0)  # Remove padding between the figure and the edges
+    fig.canvas.draw()
+    image_array = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+    image_array = image_array.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close(fig)
+    return image_array

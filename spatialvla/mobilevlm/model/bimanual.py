@@ -322,9 +322,10 @@ class TwinVLA(SpatialVLAForCausalLM):
         images: Optional[torch.FloatTensor] = None,
         num_denoise_steps: Optional[int] = None,
         states: Optional[torch.Tensor] = None,
-        prior_actions = None
+        prior_actions = None,
+        output_attn = False,
     ):
-        output_attentions = False
+        output_attentions = output_attn
         output_hidden_states = False
         return_dict=False
         outputs, all_hidden_states, all_self_attns, inputs_lr, attention_mask = self.joint_forward(
@@ -364,6 +365,8 @@ class TwinVLA(SpatialVLAForCausalLM):
             predicted_actions.append(predicted_action)
 
         final_actions = torch.cat(predicted_actions, dim=-1)
+        if output_attn:
+            return final_actions, all_self_attns
         return final_actions
 
 
@@ -421,7 +424,7 @@ def load_twinvla_from_singlevla(single_model_path, load_8bit=False, load_4bit=Fa
         model.si.load_ema(model_path)
 
     model.prepare_twinvla()
-    model.config.trainig = False
+    model.config.training = False
 
     return tokenizer, model, image_processor, dataset_statistics
 
