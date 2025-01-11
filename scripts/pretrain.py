@@ -196,14 +196,19 @@ if distributed_state.is_main_process:
     )
 
 if training_ars.resume:
-    ckpt = torch.laod(training_args.)
+    ckpt = torch.laod(training_args.output_dir)
+    optimizer.load_state_dict(ckpt['optim'])
+    scheduler.load_state_dict(ckpt['scheduler'])
+    step = ckpt['step']
+else:
+    step = 0
 
 ## Training LOOP!
 print('Training Start')
 with tqdm(total=training_args.max_steps, leave=False) as progress:
     model.train()
     optimizer.zero_grad()
-    for batch_idx, batch in enumerate(dataloader):
+    for batch_idx, batch in enumerate(dataloader, start=step):
         ## Forward
         model.train()
         optimizer.zero_grad()
@@ -298,7 +303,7 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 model.module.save_pretrained(training_args.output_dir)
                 tokenizer.save_pretrained(training_args.output_dir)
                 other_states = {
-                    'step': step,
+                    'step': gradient_step_idx,
                     'optim': optimizer.state_dict(),
                     'scheduler': scheduler.state_dict()
                 }
