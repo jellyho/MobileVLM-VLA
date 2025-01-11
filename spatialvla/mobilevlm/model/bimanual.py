@@ -460,8 +460,8 @@ def load_twinvla(model_path, load_8bit=False, load_4bit=False, device_map='auto'
 
     if model.action_head:
         model.action_head.to(device=device)
-    # dataset_statistics = load_statistics_from_json(model_path)
+    dataset_statistics = load_statistics_from_json(model_path)
 
     image_processor = vision_tower.image_processor
 
-    return tokenizer, model, image_processor, None
+    return tokenizer, model, image_processor, dataset_statistics

@@ -525,7 +525,7 @@ def make_interleaved_dataset(
 
     # Allocate Threads based on Weights
     if enable_autotune:
-        traj_transform_threads, traj_read_threads = None, None
+        traj_transform_threads, traj_read_threads = 16, None
     threads_per_dataset = allocate_threads(traj_transform_threads, sample_weights)
     reads_per_dataset = allocate_threads(traj_read_threads, sample_weights)
 

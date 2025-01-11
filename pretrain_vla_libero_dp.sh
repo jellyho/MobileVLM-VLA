@@ -8,7 +8,7 @@ done
 # srun --gres=gpu:$1 
 export OMP_NUM_THREADS=64
 
-srun --job-name=lib_$2 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
+srun --job-name=lib_$2 --cpus_per_task 32 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
     --learning_rate 1e-4 \
     --lr_scheduler_type "cosine" \
     --warmup_ratio 0.05 \
@@ -20,7 +20,7 @@ srun --job-name=lib_$2 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_bac
     --weight_decay 1e-6 \
     --data_root_dir "/home/shared/rlds_datasets" \
     --data_mix "libero_$2_no_noops" \
-    --output_dir "checkpoints/libero_$2_dp_v2" \
+    --output_dir "checkpoints/libero_$2_dp_v3" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \

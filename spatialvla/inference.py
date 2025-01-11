@@ -92,7 +92,7 @@ class VLAModel:
                     images=images_tensor,
                     use_cache=True
                 )
-        action = action.cpu().numpy()[0]
+        action = action.float().cpu().numpy()[0]
         # action = action[:, :7]
         action = self.unnorm_action(unnorm_key, action)
         return action
@@ -100,8 +100,8 @@ class VLAModel:
 class TwinVLAModel:
     def __init__(self, model_path, dtype=torch.bfloat16):
         disable_torch_init()
-        # self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_vla(model_path=model_path, dtype=dtype)
-        self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_twinvla_from_singlevla(single_model_path=model_path, dtype=dtype)
+        self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_twinvla(model_path=model_path, dtype=dtype)
+        # self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_twinvla_from_singlevla(single_model_path=model_path, dtype=dtype)
         self.dtype = dtype
         # self.tokenizer, self.model, self.image_processor, _ = load_pretrained_model(model_path)
 

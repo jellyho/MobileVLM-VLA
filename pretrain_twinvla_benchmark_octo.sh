@@ -7,7 +7,7 @@ while :; do
 done
 export OMP_NUM_THREADS=32
 # srun --gres=gpu:$1 
-srun --job-name=twinvla_test --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain_twinvla.py \
+srun --job-name=twinvla_test --cpus-per-task=64 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain_twinvla.py \
     --single_model_path 'checkpoints/vla_benchmark_octo_full_1gpu_v2' \
     --learning_rate 1e-4 \
     --lr_scheduler_type "cosine" \
@@ -19,8 +19,8 @@ srun --job-name=twinvla_test --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rd
     --use_rslora false \
     --weight_decay 1e-6 \
     --data_root_dir "/home/shared/rlds_datasets" \
-    --data_mix "transfer_tissue" \
-    --output_dir "checkpoints/twinvla_transfer_tissue_v1" \
+    --data_mix "lg_transfer_wet_tissue_v1" \
+    --output_dir "checkpoints/twinvla_transfer_tissue_v2" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 4 \
     --adam_epsilon 1e-8 \

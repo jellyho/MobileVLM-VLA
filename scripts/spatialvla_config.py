@@ -140,6 +140,9 @@ class ModelArguments:
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
+    # resume?
+    resume: bool = field(default=False)
+
     # Directory Paths
     output_dir: str = field(default='checkpoints/SpatialVLA_highlr')
     data_root_dir: str = field(default='/home/shared/rlds_datasets')
@@ -178,6 +181,7 @@ class TrainingArguments(transformers.TrainingArguments):
     weight_decay: float = field(default=0.01)
     adam_epsilon: float= field(default=1e-8)
     gradient_accumulation_steps: int = field(default=1)
+    save_optimizer: bool = field(default=True)
 
     # Quantization
     double_quant: bool = field(default=True)

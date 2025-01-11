@@ -1042,6 +1042,7 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     'lg_cup_color_rightarm' : lg_stack_cup_dataset_transform,
     'lg_cup_color_rightarm_dual' : lg_stack_cup_dataset_transform,
     'lg_transfer_wet_tissue' : lg_stack_cup_dataset_transform,
+    'lg_transfer_wet_tissue_v1' : lg_delta_ee_transform,
     'lg_cup_color_rightarm_leftview' : lg_stack_cup_dataset_transform,
     'lg_stack_cup_5hz' : lg_stack_cup_dataset_transform,
     'lg_cup_color_5hz' : lg_clean_dataset_transform,

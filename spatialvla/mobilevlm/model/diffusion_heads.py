@@ -8,6 +8,7 @@ from spatialvla.mobilevlm.model.action_heads import MAPHead
 from spatialvla.mobilevlm.model.conditional_unet1d import ConditionalUnet1D
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
+from diffusers.schedulers.scheduling_dpmsolver_multistep import DPMSolverMultistepScheduler
 
 ############## Pytorch Version of Octo Diffusion Head #################
 class FourierFeatures(nn.Module):
@@ -369,7 +370,7 @@ class FlowMatchingActionHead(nn.Module):
 
     def psi_t(self, x, x1, t):
         t = t[:, None]
-        return (1 - (1 - self.flow_sig_min) * t) * x + t + x1
+        return (1 - (1 - self.flow_sig_min) * t) * x + t * x1
 
     def forward(self, embeddings, time=None, noisy_actions=None):
         if time is None or noisy_actions is None:
@@ -443,6 +444,7 @@ class FlowMatchingActionHead(nn.Module):
         # embeddings = embeddings[:, -self.action_len:]
         embeddings = self.proj(embeddings)
         num_denoise_steps = num_denoise_steps or self.diffusion_steps
+        num_denoise_steps = 100
         batch_size = embeddings.shape[0]
         action_shape = (batch_size, self.action_len, self.action_dim)
 
@@ -615,10 +617,15 @@ class DiffusionPolicyHead2(nn.Module):
             beta_start=0.0001,
             beta_end=0.02,
             beta_schedule='squaredcos_cap_v2',
-            variance_type='fixed_small',
-            clip_sample=True,
-            clip_sample_range=self.max_action,
-            prediction_type='epsilon'
+            prediction_type='sample'
+        )
+
+        self.scheduler_sample = DPMSolverMultistepScheduler(
+            num_train_timesteps=self.diffusion_steps,
+            beta_start=0.0001,
+            beta_end=0.02,
+            beta_schedule='squaredcos_cap_v2',
+            prediction_type='sample'
         )
 
     def forward(self, embeddings, time=None, noisy_actions=None):
@@ -662,7 +669,7 @@ class DiffusionPolicyHead2(nn.Module):
         noisy_actions = self.scheduler.add_noise(actions, noise, time)
         pred_eps = self(embeddings, time=time.to(actions.device), noisy_actions=noisy_actions)
 
-        loss = F.mse_loss(pred_eps, noise, reduction="none")
+        loss = F.mse_loss(pred_eps, actions, reduction="none")
         loss = loss.mean()
         return loss
 
@@ -691,22 +698,22 @@ class DiffusionPolicyHead2(nn.Module):
             embeddings = embeddings[:, -self.action_len:] # last L token for action decoding
 
         embeddings = self.proj(embeddings) # (B, T, h)
-        num_denoise_steps = num_denoise_steps or self.diffusion_steps
+        num_denoise_steps = num_denoise_steps or 5
         batch_size = embeddings.shape[0]
         action_shape = (batch_size, self.action_len, self.action_dim)
 
         # Start with pure noise as the initial noisy action
         noisy_actions = torch.randn(action_shape, device=embeddings.device)
-        self.scheduler.set_timesteps(num_denoise_steps)
+        self.scheduler_sample.set_timesteps(5)
 
         with torch.autocast(device_type='cuda', dtype=dtype):
-            for step in self.scheduler.timesteps:
+            for step in self.scheduler_sample.timesteps:
                 # Prepare time tensor for this specific step
                 time_tensor = torch.full((batch_size,), step, device=embeddings.device, dtype=torch.long)
                 # Predict the noise in the current noisy actions
-                print(time_tensor.shape)
+                # print(time_tensor.shape)
                 pred_eps = self.diffusion_model(local_cond=embeddings, sample=noisy_actions, timestep=time_tensor)
-                noisy_actions = self.scheduler.step(pred_eps, step, noisy_actions).prev_sample
+                noisy_actions = self.scheduler_sample.step(pred_eps, step, noisy_actions).prev_sample
 
         # Clamp the final prediction to the max action range
         predicted_actions = noisy_actions.clamp(-self.max_action, self.max_action).reshape(batch_size, -1) # B, L*A(for compatibility)
@@ -755,7 +762,7 @@ class FlowMatchingDiffusionPolicyHead(nn.Module):
 
     def psi_t(self, x, x1, t):
         t = t[:, None, None]
-        return (1 - (1 - self.flow_sig_min) * t) * x + t + x1
+        return (1 - (1 - self.flow_sig_min) * t) * x + t * x1
 
     def forward(self, embeddings, time=None, noisy_actions=None):
         if time is None or noisy_actions is None:

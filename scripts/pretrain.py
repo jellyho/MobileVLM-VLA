@@ -49,23 +49,28 @@ model_args.head_args = HEAD_ARGS[model_args.action_head]
 ## Load Pretrained VLM
 load_4bit = training_args.bits == 4
 load_8bit = training_args.bits == 8
+
 if training_args.bf16:
     dtype = torch.bfloat16
 if training_args.fp16:
     dtype = torch.float16
-tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
-    model_args, 
-    load_8bit, 
-    load_4bit,
-    device=device_id,
-    dtype=dtype
-)
-# tokenizer, model, image_processor, _ = load_vla(
-#     'checkpoints/bridge_rt1',
-#     load_8bit=False, 
-#     load_4bit=False,
-#     device='cuda',
-# )
+
+if training_args.resume:
+    tokenizer, model, image_processor, _ = load_vla(
+        output_dir,
+        load_8bit=False, 
+        load_4bit=False,
+        device='cuda',
+    )
+else:
+    tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
+        model_args, 
+        load_8bit, 
+        load_4bit,
+        device=device_id,
+        dtype=dtype
+    )
+
 model.config.use_cache = False
 model = model.to(device_id)
 print('Pretrained VLM Loaded')
@@ -76,7 +81,6 @@ if model.config.head_args['head_type'] == 'BR':
     model.action_tokenizer = action_tokenizer
 else:
     action_tokenizer = None
-
 
 batch_transform = RLDSBatchTransform(
     tokenizer,
@@ -191,6 +195,9 @@ if distributed_state.is_main_process:
         config={**asdict(training_args), **asdict(model_args)}
     )
 
+if training_ars.resume:
+    ckpt = torch.laod(training_args.)
+
 ## Training LOOP!
 print('Training Start')
 with tqdm(total=training_args.max_steps, leave=False) as progress:
@@ -290,6 +297,12 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 model.module.config.save_pretrained(training_args.output_dir)
                 model.module.save_pretrained(training_args.output_dir)
                 tokenizer.save_pretrained(training_args.output_dir)
+                other_states = {
+                    'step': step,
+                    'optim': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict()
+                }
+                torch.save(other_states, training_args.output_dir)
                 if model.module.config.head_args['head_type'] == 'BR':
                     model.module.si.save_ema(training_args.output_dir)
 
