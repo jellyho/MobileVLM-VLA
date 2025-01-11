@@ -195,7 +195,7 @@ if distributed_state.is_main_process:
         config={**asdict(training_args), **asdict(model_args)}
     )
 
-if training_ars.resume:
+if training_args.resume:
     ckpt = torch.laod(training_args.output_dir)
     optimizer.load_state_dict(ckpt['optim'])
     scheduler.load_state_dict(ckpt['scheduler'])
