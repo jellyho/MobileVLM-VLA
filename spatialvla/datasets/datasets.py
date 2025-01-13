@@ -122,7 +122,8 @@ class RLDSDataset(IterableDataset):
             traj_transform_kwargs=dict(
                 window_size=window_size,                        # If we wanted to feed / predict more than one step
                 future_action_window_size=future_action_window_size,                        # For action chunking
-                skip_unlabeled=True,                                # Skip trajectories without language labels
+                skip_unlabeled=True,    
+                subsample_length=100                   # Skip trajectories without language labels
             ),
             frame_transform_kwargs=dict(
                 resize_size={}, # resize will be done by image processor
