@@ -100,7 +100,8 @@ dataset = RLDSDataset(
     window_size=1,
     future_action_window_size=model_args.action_len - 1,
     enable_autotune=training_args.enable_autotune,
-    use_state_input=model_args.use_state_input
+    use_state_input=model_args.use_state_input,
+    num_parallel_calls=training_args.num_parallel_calls
 )
 
 collator = PaddedCollatorForActionPrediction(
