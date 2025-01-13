@@ -179,6 +179,7 @@ class TrainingArguments(transformers.TrainingArguments):
 
     learning_rate: float = field(default=1e-4)
     lr_scheduler_type: str = field(default='constant')
+    freeze_vision_backbone: bool = field(default=False)
     warmup_ratio: float = field(default=0.06)
     max_grad_norm: float = field(default=1.0)
     weight_decay: float = field(default=0.01)

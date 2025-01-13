@@ -99,7 +99,7 @@ class ModelArguments:
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
-    # Directory Paths
+    resume: bool = field(default=False)
     output_dir: str = field(default='checkpoints/SpatialVLA_highlr')
     data_root_dir: str = field(default='/home/shared/rlds_datasets')
     data_mix: str = field(default='libero_object_no_noops')
@@ -124,6 +124,9 @@ class TrainingArguments(transformers.TrainingArguments):
     batch_size: int = field(default=32)
     shuffle_buffer_size: int = field(default=10000)
     enable_autotune: bool = field(default=True)
+    num_parallel_calls: int = field(default=16)
+    traj_transform_threads: int = field(default=10)
+    traj_read_treads: int = field(default=10)
     image_aug: bool = field(default=False)
     max_steps: int = field(default=50000)  
     save_steps: int = field(default=1000)

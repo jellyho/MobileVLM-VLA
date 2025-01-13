@@ -5,9 +5,9 @@ while :; do
     # Check if the port is available
     (echo >/dev/tcp/localhost/$RDZV_PORT) &>/dev/null || break
 done
-export OMP_NUM_THREADS=32
+export OMP_NUM_THREADS=16
 # srun --gres=gpu:$1 
-srun --job-name=vla_benchmark --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
+srun --job-name=vla_benchmark --cpus-per-task=16 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
     --learning_rate 1e-4 \
     --lr_scheduler_type "cosine" \
     --warmup_ratio 0.05 \
@@ -19,7 +19,7 @@ srun --job-name=vla_benchmark --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --r
     --weight_decay 1e-6 \
     --data_root_dir "/home/shared/vla_benchmark_rlds" \
     --data_mix "vla_benchmark" \
-    --output_dir "checkpoints/vla_benchmark_fm_$1gpu" \
+    --output_dir "checkpoints/vla_benchmark_fm_$1gpu_vf" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \

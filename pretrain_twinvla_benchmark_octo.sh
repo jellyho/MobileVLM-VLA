@@ -5,9 +5,9 @@ while :; do
     # Check if the port is available
     (echo >/dev/tcp/localhost/$RDZV_PORT) &>/dev/null || break
 done
-export OMP_NUM_THREADS=32
+export OMP_NUM_THREADS=16
 # srun --gres=gpu:$1 
-srun --job-name=twinvla_test --cpus-per-task=64 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain_twinvla.py \
+srun --job-name=twinvla_test --cpus-per-task=16 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain_twinvla.py \
     --single_model_path 'checkpoints/vla_benchmark_octo_full_1gpu_v2' \
     --learning_rate 1e-4 \
     --lr_scheduler_type "cosine" \
@@ -18,9 +18,9 @@ srun --job-name=twinvla_test --cpus-per-task=64 --gres=gpu:$1 torchrun --rdzv_id
     --lora_dropout 0.01 \
     --use_rslora false \
     --weight_decay 1e-6 \
-    --data_root_dir "/home/shared/rlds_datasets" \
-    --data_mix "lg_transfer_wet_tissue_v1" \
-    --output_dir "checkpoints/twinvla_transfer_tissue_v2" \
+    --data_root_dir "/home/shared/" \
+    --data_mix "transfer_cup" \
+    --output_dir "checkpoints/twinvla_transfer_cup" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 4 \
     --adam_epsilon 1e-8 \
@@ -29,7 +29,7 @@ srun --job-name=twinvla_test --cpus-per-task=64 --gres=gpu:$1 torchrun --rdzv_id
     --action_len 8 \
     --max_steps 50000 \
     --save_steps 5000 \
-    --shuffle_buffer_size 20000 \
+    --shuffle_buffer_size 10000 \
     --batch_size 8 \
     --image_aug true \
     --wandb_project "VLA_BENCHMARK_DP"

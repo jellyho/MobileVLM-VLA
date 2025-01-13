@@ -97,7 +97,8 @@ dataset = RLDSDataset(
     window_size=1,
     future_action_window_size=model_args.action_len - 1,
     enable_autotune=training_args.enable_autotune,
-    use_state_input=model_args.use_state_input
+    use_state_input=model_args.use_state_input,
+    num_parallel_calls=training_args.num_parallel_calls
 )
 
 collator = PaddedCollatorForActionPrediction(
@@ -126,15 +127,6 @@ if distributed_state.is_main_process:
     save_dataset_statistics(dataset.dataset_statistics, training_args.output_dir)
 temp_dir = f'{training_args.output_dir}_tmp'
 print('Dataset Loaded')
-
-# Gradient Checkpointing
-if training_args.gradient_checkpointing: 
-    if hasattr(model, "enable_input_require_grads"):
-        model.enable_input_require_grads()
-    else:
-        def make_inputs_require_grad(module, input, output):
-            output.requires_grad_(True)
-        model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
 decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
@@ -191,6 +183,17 @@ if distributed_state.is_main_process:
         name=f"{training_args.data_mix}_{model_args.action_head}_chunk{model_args.action_len}",
         config={**asdict(training_args), **asdict(model_args)}
     )
+
+if training_args.resume:
+    if os.path.exists(f'{training_args.output_dir}/training_states.pth'):
+        ckpt = torch.load(f'{training_args.output_dir}/training_states.pth', map_location="cpu")
+        optimizer.load_state_dict(ckpt['optim'])
+        scheduler.load_state_dict(ckpt['scheduler'])
+        step = ckpt['step']
+    else:
+        step = 0
+else:
+    step = 0
 
 ## Training LOOP!
 print('Training Start')
@@ -291,6 +294,13 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 model.module.config.save_pretrained(training_args.output_dir)
                 model.module.save_pretrained(training_args.output_dir)
                 tokenizer.save_pretrained(training_args.output_dir)
+                other_states = {
+                    'step': gradient_step_idx,
+                    'optim': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict()
+                }
+                torch.save(other_states, f'{training_args.output_dir}/training_states.pth')
+                del other_states
                 if model.module.config.head_args['head_type'] == 'BR':
                     model.module.si.save_ema(training_args.output_dir)
 

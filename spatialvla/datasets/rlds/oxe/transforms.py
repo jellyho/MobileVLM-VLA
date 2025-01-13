@@ -44,30 +44,12 @@ def lg_joint_pos_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 
 def lg_ee_pos_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     #NOTE remove last two timesteps
-    for key in trajectory.keys():
-        if key == "traj_metadata":
-            continue
-        elif key in ["observation", "action"]:
-            for key2 in trajectory[key]:
-                trajectory[key][key2] = trajectory[key][key2][:-1]
-        else:
-            trajectory[key] = trajectory[key][:-1]
-
     #NOTE use delta joint value as an action
     trajectory["action"] = trajectory["action"]["ee_pos"]   
     return trajectory
 
 def lg_delta_ee_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     #NOTE remove last two timesteps
-    for key in trajectory.keys():
-        if key == "traj_metadata":
-            continue
-        elif key in ["observation", "action"]:
-            for key2 in trajectory[key]:
-                trajectory[key][key2] = trajectory[key][key2][:-1]
-        else:
-            trajectory[key] = trajectory[key][:-1]
-
     #NOTE use delta joint value as an action
     trajectory["action"] = trajectory["action"]["delta_ee"]   
     return trajectory

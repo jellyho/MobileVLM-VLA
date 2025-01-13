@@ -131,7 +131,12 @@ if distributed_state.is_main_process:
 temp_dir = f'{training_args.output_dir}_tmp'
 print('Dataset Loaded')
 
+if training_args.freeze_vision_backbone:
+    for param in model.model.vision_tower.parameters():
+        param.requires_grad = True
+
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
+
 decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
 decay_parameters_names = [name for name in decay_parameters if "bias" not in name]
 optimizer_grouped_parameters = []
