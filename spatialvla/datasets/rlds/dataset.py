@@ -525,7 +525,7 @@ def make_interleaved_dataset(
 
     # Allocate Threads based on Weights
     if enable_autotune:
-        traj_transform_threads, traj_read_threads = 16, None
+        traj_transform_threads, traj_read_threads = None, None
     threads_per_dataset = allocate_threads(traj_transform_threads, sample_weights)
     reads_per_dataset = allocate_threads(traj_read_threads, sample_weights)
 
@@ -540,11 +540,11 @@ def make_interleaved_dataset(
         threads_per_dataset,
         reads_per_dataset,
     ):
-        dataset_frame_transform_kwargs = (
-            dataset_kwargs.pop("dataset_frame_transform_kwargs")
-            if "dataset_frame_transform_kwargs" in dataset_kwargs
-            else {}
-        )
+        # dataset_frame_transform_kwargs = (
+        #     dataset_kwargs.pop("dataset_frame_transform_kwargs")
+        #     if "dataset_frame_transform_kwargs" in dataset_kwargs
+        #     else {}
+        # )
         dataset, _ = make_dataset_from_rlds(
             **dataset_kwargs,
             train=train,
@@ -558,11 +558,11 @@ def make_interleaved_dataset(
             num_parallel_calls=threads,
             train=train,
         ).flatten(num_parallel_calls=threads)
-        dataset = apply_per_dataset_frame_transforms(dataset, **dataset_frame_transform_kwargs)
+        # dataset = apply_per_dataset_frame_transforms(dataset, **dataset_frame_transform_kwargs)
         datasets.append(dataset)
 
     # Interleave at the Frame Level
-    dataset: dl.DLataset = dl.DLataset.sample_from_datasets(datasets, sample_weights)
+    dataset: dl.DLataset = dl.DLataset.sample_from_datasets(datasets, sample_weights).shuffle(shuffle_buffer_size)
 
     # Validation =>> fix a single shuffle buffer of data and cache it in RAM; prevents gradual memory increase!
     if not train:
@@ -570,7 +570,7 @@ def make_interleaved_dataset(
 
     # Shuffle the Dataset
     #   =>> IMPORTANT :: Shuffle AFTER .cache(), or else memory will still leak!
-    dataset = dataset.shuffle(shuffle_buffer_size)
+    # dataset = dataset.shuffle(shuffle_buffer_size)
 
     # Apply Frame Transforms
     print("Applying frame transforms on dataset...")
@@ -581,7 +581,8 @@ def make_interleaved_dataset(
         dataset = dataset.batch(batch_size)
 
     # Note =>> Seems to reduce memory usage without affecting speed?
-    dataset = dataset.with_ram_budget(1)
+    dataset = dataset.with_ram_budget(gb=1)
+    dataset = dataset.ignore_errors(log_warning=True)
 
     # Save for Later
     dataset.sample_weights = sample_weights

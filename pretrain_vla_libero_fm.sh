@@ -6,10 +6,10 @@ while :; do
     (echo >/dev/tcp/localhost/$RDZV_PORT) &>/dev/null || break
 done
 
-export OMP_NUM_THREADS=100
+export OMP_NUM_THREADS=4
 
 # srun --gres=gpu:$1 
-srun --job-name=fm_$2 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain_libero.py \
+srun --job-name=fm_$2 --gres=gpu:$1 --cpus-per-task=2 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
     --learning_rate 1e-4 \
     --lr_scheduler_type "cosine" \
     --warmup_ratio 0.05 \
@@ -35,5 +35,5 @@ srun --job-name=fm_$2 --gres=gpu:$1 torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_back
     --shuffle_buffer_size 20000 \
     --batch_size 32 \
     --image_aug false \
-    --wandb_project "VLA_LIBERO_FM" \
+    --wandb_project "VLA_LIBERO_DP" \
     --enable_autotune true

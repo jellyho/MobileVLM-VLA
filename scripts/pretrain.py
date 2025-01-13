@@ -57,7 +57,7 @@ if training_args.fp16:
 
 if training_args.resume:
     tokenizer, model, image_processor, _ = load_vla(
-        output_dir,
+        training_args.output_dir,
         load_8bit=False, 
         load_4bit=False,
         device='cuda',
@@ -130,15 +130,6 @@ if distributed_state.is_main_process:
 temp_dir = f'{training_args.output_dir}_tmp'
 print('Dataset Loaded')
 
-# Gradient Checkpointing
-if training_args.gradient_checkpointing: 
-    if hasattr(model, "enable_input_require_grads"):
-        model.enable_input_require_grads()
-    else:
-        def make_inputs_require_grad(module, input, output):
-            output.requires_grad_(True)
-        model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
 decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
 decay_parameters_names = [name for name in decay_parameters if "bias" not in name]
@@ -196,10 +187,13 @@ if distributed_state.is_main_process:
     )
 
 if training_args.resume:
-    ckpt = torch.laod(training_args.output_dir)
-    optimizer.load_state_dict(ckpt['optim'])
-    scheduler.load_state_dict(ckpt['scheduler'])
-    step = ckpt['step']
+    if os.path.exists(f'{training_args.output_dir}/training_states.pth'):
+        ckpt = torch.load(f'{training_args.output_dir}/training_states.pth', map_location="cpu")
+        optimizer.load_state_dict(ckpt['optim'])
+        scheduler.load_state_dict(ckpt['scheduler'])
+        step = ckpt['step']
+    else:
+        step = 0
 else:
     step = 0
 
@@ -307,7 +301,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                     'optim': optimizer.state_dict(),
                     'scheduler': scheduler.state_dict()
                 }
-                torch.save(other_states, training_args.output_dir)
+                torch.save(other_states, f'{training_args.output_dir}/training_states.pth')
+                del other_states
                 if model.module.config.head_args['head_type'] == 'BR':
                     model.module.si.save_ema(training_args.output_dir)
 

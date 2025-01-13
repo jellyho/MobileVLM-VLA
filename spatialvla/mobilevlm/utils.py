@@ -226,7 +226,7 @@ def pretty_print_semaphore(semaphore):
 import matplotlib.pyplot as plt
 import numpy as np
 def attn_viz_array(attn_mat, width, head=0):
-    seq_len = attn[0].shape[-1]
+    seq_len = attn_mat[0].shape[-1]
     half_len = seq_len // 2
     matrix_list = torch.zeros((16 , 24, half_len))
     for i in range(24):

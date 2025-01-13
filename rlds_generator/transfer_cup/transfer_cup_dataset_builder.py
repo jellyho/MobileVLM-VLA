@@ -8,7 +8,7 @@ import tensorflow_hub as hub
 import h5py
 
 
-class VlaBenchmark(tfds.core.GeneratorBasedBuilder):
+class TransferCup(tfds.core.GeneratorBasedBuilder):
     """DatasetBuilder for example dataset."""
 
     VERSION = tfds.core.Version('1.0.0')
@@ -32,37 +32,25 @@ class VlaBenchmark(tfds.core.GeneratorBasedBuilder):
                             encoding_format='png',
                             doc='Main camera RGB observation.',
                         ),
-                        'state': tfds.features.FeaturesDict({
-                            'ee_pos':tfds.features.Tensor(
-                                shape=(7,),
-                                dtype=np.float64,
-                                doc='2x robot local joint',
-                            ),
-                            'joint_pos':tfds.features.Tensor(
-                                shape=(7,),
-                                dtype=np.float64,
-                                doc='2x robot local joint',
-                            ),
-                        }),
                     }),
                     'action': tfds.features.FeaturesDict({
                         'ee_pos': tfds.features.Tensor(
-                            shape=(7,),
+                            shape=(14,),
                             dtype=np.float64,
                             doc='2x robot local joint',
                         ),
                         'joint_pos': tfds.features.Tensor(
-                            shape=(7,),
+                            shape=(14,),
                             dtype=np.float64,
                             doc='2x robot local joint',
                         ),
                         'delta_ee': tfds.features.Tensor(
-                            shape=(7,),
+                            shape=(14,),
                             dtype=np.float64,
                             doc='2x robot local joint',
                         ),
                         'delta_joint': tfds.features.Tensor(
-                            shape=(7,),
+                            shape=(14,),
                             dtype=np.float64,
                             doc='2x robot delta joint',
                         ),
@@ -87,7 +75,7 @@ class VlaBenchmark(tfds.core.GeneratorBasedBuilder):
     def _split_generators(self, dl_manager: tfds.download.DownloadManager):
         """Define data splits."""
         return {
-            'train': self._generate_examples(path='/home/shared/vla_benchmark/*/*.hdf5'),
+            'train': self._generate_examples(path='/home/shared/rlds_datasets/transfer_cup/*.hdf5'),
         }
 
     def _generate_examples(self, path) -> Iterator[Tuple[str, Any]]:
@@ -103,34 +91,36 @@ class VlaBenchmark(tfds.core.GeneratorBasedBuilder):
             nli = root['/metadata/language_instruction']
             image = root['/observation/image']
             # leftview_image = root['/observation/leftview_image']
-            state_joint_pos = root['observation/joint_pos']
-            state_ee_pos = root['observation/ee_pos']
             joint_pos = root['/action/joint_pos']
             ee_pos = root['/action/ee_pos']
 
             ####### Important ################
             delta_ee_right = np.zeros((length + 1, 7))
-            delta_ee_right[1:] = ee_pos[()]
-            delta_ee_right[0] = root['observation/ee_pos'][0]
+            delta_ee_right[1:] = ee_pos[:, 7:]
+            delta_ee_right[0] = root['observation/ee_pos'][0, 7:]
+
+            delta_ee_left = np.zeros((length + 1, 7))
+            delta_ee_left[1:] = ee_pos[:, :7]
+            delta_ee_left[0] = root['observation/ee_pos'][0, :7]
 
             hz = 20
             shift = 20 // hz
 
             delta_ee_right = delta_ee_right[shift:, :6] - delta_ee_right[:-shift, :6]
             grp_right = ee_pos[shift:, 6]
+
+            delta_ee_left = delta_ee_left[shift:, :6] - delta_ee_left[:-shift, :6]
+            grp_left = ee_pos[shift:, 6]
+            # print(delta_ee_right.shape, grp_right.shape, delta_ee_left.shape, grp_left.shape)
             # print('L', length, 'ee', delta_ee_right.shape[0])
             # assemble episode --> here we're assuming demos so we set reward to 1 at the end
             episode = []
             for i in range(length - shift):
                 language_embedding = self._embed([nli[i]])[0].numpy()
-                delta_ee = np.concatenate([delta_ee_right[i], np.array(grp_right[i]).reshape(1)])
+                delta_ee = np.concatenate([delta_ee_left[i], np.array(grp_left[i]).reshape(1), delta_ee_right[i], np.array(grp_right[i]).reshape(1)])
                 episode.append({
                         'observation': {
                             'image': image[i],
-                            'state' : {
-                                'ee_pos': state_ee_pos[i],
-                                'joint_pos': state_joint_pos[i]
-                            }
                             # 'leftview_image': leftview_image[i]
                         },
                         'action': {

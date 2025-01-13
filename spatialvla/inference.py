@@ -65,7 +65,7 @@ class VLAModel:
             outputs = outputs[: -len(stop_str)]
         return f"{outputs.strip()}"
 
-    def inference_action(self, unnorm_key, image, prompt, state=None):
+    def inference_action(self, unnorm_key, image, prompt, state=None, num_denoise_steps=None):
         images = [image]
         # Check whether this process_images is same as dataset
         images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=self.dtype)
@@ -90,10 +90,10 @@ class VLAModel:
                 action = self.model.predict_action(
                     input_ids=input_ids,
                     images=images_tensor,
-                    use_cache=True
+                    use_cache=True,
+                    num_denoise_steps=num_denoise_steps
                 )
         action = action.float().cpu().numpy()[0]
-        # action = action[:, :7]
         action = self.unnorm_action(unnorm_key, action)
         return action
 

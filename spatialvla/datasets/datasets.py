@@ -123,11 +123,10 @@ class RLDSDataset(IterableDataset):
                 window_size=window_size,                        # If we wanted to feed / predict more than one step
                 future_action_window_size=future_action_window_size,                        # For action chunking
                 skip_unlabeled=True,                                # Skip trajectories without language labels
-                goal_relabeling_strategy="uniform",                 # Goals are currently unused
             ),
             frame_transform_kwargs=dict(
                 resize_size={}, # resize will be done by image processor
-                num_parallel_calls=16,                          # For CPU-intensive ops (decoding, resizing, etc.)
+                num_parallel_calls=16,        # They used 100!!! how?                  # For CPU-intensive ops (decoding, resizing, etc.)
             ),
             dataset_kwargs_list=per_dataset_kwargs,
             shuffle_buffer_size=shuffle_buffer_size,
@@ -142,10 +141,10 @@ class RLDSDataset(IterableDataset):
         # If applicable, enable image augmentations
         if image_aug:
             rlds_config["frame_transform_kwargs"].update({"image_augment_kwargs" : dict(
-                random_resized_crop=dict(scale=[0.90, 0.90], ratio=[1.00, 1.00]),
-                random_brightness=[0.2],
-                random_contrast=[0.8, 1.2],
-                random_saturation=[0.8, 1.2],
+                random_resized_crop=dict(scale=[0.8, 1.0], ratio=[0.9, 1.1]),
+                random_brightness=[0.1],
+                random_contrast=[0.9, 1.1],
+                random_saturation=[0.9, 1.1],
                 random_hue=[0.05],
                 augment_order=[
                     "random_resized_crop",

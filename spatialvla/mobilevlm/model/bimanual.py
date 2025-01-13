@@ -451,6 +451,9 @@ def load_twinvla(model_path, load_8bit=False, load_4bit=False, device_map='auto'
     model = TwinVLA.from_pretrained(model_path, config=config, low_cpu_mem_usage=False, **kwargs)
     model.to(device)
 
+    ckpt = torch.load(f'{model_path}/pytorch_model.bin')
+    model.load_state_dict(ckpt)
+
     vision_tower = model.get_vision_tower()
     if 'v2' in getattr(model.config, "mm_projector_type", "ldpnet"):
         vision_tower.load_image_processor()

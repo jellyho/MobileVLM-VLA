@@ -444,7 +444,7 @@ class FlowMatchingActionHead(nn.Module):
         # embeddings = embeddings[:, -self.action_len:]
         embeddings = self.proj(embeddings)
         num_denoise_steps = num_denoise_steps or self.diffusion_steps
-        num_denoise_steps = 100
+        # num_denoise_steps = 100
         batch_size = embeddings.shape[0]
         action_shape = (batch_size, self.action_len, self.action_dim)
 

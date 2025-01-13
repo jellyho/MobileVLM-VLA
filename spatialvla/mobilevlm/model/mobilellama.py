@@ -350,9 +350,9 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                 action_hidden = hidden # [batch, token_num, dim]
             
             if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMatchingDiffusionPolicy']:
-                predicted_action = self.action_head.predict_action(action_hidden, attention_mask=attention_mask)
+                predicted_action = self.action_head.predict_action(action_hidden, attention_mask=attention_mask, num_denoise_steps=num_denoise_steps)
             elif self.config.head_args['head_type'] == 'DiffusionPolicy':
-                predicted_action = self.action_head.predict_action(action_hidden)
+                predicted_action = self.action_head.predict_action(action_hidden, num_denoise_steps=num_denoise_steps)
             elif self.config.head_args['head_type'] == 'DiT':
                 noisy_actions = self.action_head.denoise_action(noisy_actions, action_hidden, step, time_enc)
                 predicted_action = noisy_actions
