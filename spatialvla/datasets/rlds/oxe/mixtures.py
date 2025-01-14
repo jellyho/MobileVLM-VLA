@@ -41,8 +41,8 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
     "rtx": [
         ("fractal20220817_data", 0.54087122203),                # Google RT-1 Robot Data (Large-Scale)
         ("kuka", 0.8341046294),
-        # ("bridge_oxe", 1.0)                                   # Version of Bridge V2 in Open-X GCP Bucket
-        ("bridge_orig", 1.0),                                   # Original Version of Bridge V2 from Project Website
+        ("bridge_oxe", 1.0),                                   # Version of Bridge V2 in Open-X GCP Bucket
+        # ("bridge_orig", 1.0),                                   # Original Version of Bridge V2 from Project Website
         ("taco_play", 2.0),
         ("jaco_play", 2.0),
         ("berkeley_cable_routing", 3.0),
@@ -52,20 +52,32 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
         ("berkeley_autolab_ur5", 1.0),
         ("toto", 1.0),
     ],
+    # "rtx": [
+    #     ("fractal20220817_data", 1.0),                # Google RT-1 Robot Data (Large-Scale)
+    #     ("kuka", 1.0),
+    #     ("bridge_oxe", 1.0),                                   # Version of Bridge V2 in Open-X GCP Bucket
+    #     # ("bridge_orig", 1.0),                                   # Original Version of Bridge V2 from Project Website
+    #     ("taco_play", 1.0),
+    #     ("jaco_play", 1.0),
+    #     ("berkeley_cable_routing", 1.0),
+    #     ("roboturk", 1.0),
+    #     # ("nyu_door_opening_surprising_effectiveness", 5.0),   # Note --> only contains wrist camera images (skip?)
+    #     ("viola", 1.0),
+    #     ("berkeley_autolab_ur5", 1.0),
+    #     ("toto", 1.0),
+    # ],
 
     "rtx-remix": [
-        ("fractal20220817_data", 1.0 / 40.9 * 42.5),                # Google RT-1 Robot Data (Large-Scale)
-        ("kuka", 1.0 / 24.9 * 12.1),
-        ("bridge_oxe", 1.0 / 22.7 * 19.9)                                   # Version of Bridge V2 in Open-X GCP Bucket
-        # ("bridge_orig", 1.0),                                   # Original Version of Bridge V2 from Project Website
-        ("taco_play", 1.0 / 0.60 * 0.63),
-        ("jaco_play", 1.0 / 0.81 * 0.39),
-        ("berkeley_cable_routing", 1.0 / 0.43 * 0.20),
-        ("roboturk", 1.0 / 1.94 * 1.14),
-        # ("nyu_door_opening_surprising_effectiveness", 5.0),   # Note --> only contains wrist camera images (skip?)
-        ("viola", 1.0 / 0.80 * 1.51),
-        ("berkeley_autolab_ur5", 1.0 / 1.01 * 2.37),
-        ("toto", 1.0 / 3.42 * 16.3),
+        ("berkeley_autolab_ur5", 0.02368840016424656),
+        ("berkeley_cable_routing", 0.0019966200925409794),
+        ("bridge", 0.1991041600704193),
+        ("jaco_play", 0.0038572715129703283),
+        ("kuka", 0.12065707892179489),
+        ("roboturk", 0.011355401016771793),
+        ("rt1", 0.3944754898548126),
+        ("taco_play", 0.05253653367981315),
+        ("toto", 0.19304856657981873),
+        ("viola", 0.015149127691984177),
     ],
 
     "rtx_franka": [

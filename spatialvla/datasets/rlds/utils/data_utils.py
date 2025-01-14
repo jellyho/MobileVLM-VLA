@@ -347,10 +347,14 @@ class PaddedCollatorForActionPrediction:
     padding_side: str = "right"
     use_state_input: bool = False
     use_label: bool = False
+    use_hz_input: bool = False
 
     def __call__(self, instances: Sequence[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         input_ids = [instance['input_ids'] for instance in instances]
         pixel_values = [instance["pixel_values"] for instance in instances]
+        if self.use_hz_input:
+            hz_values = [instance['hz'] for instance in instances]
+            # print(hz_values)
         if self.use_label:
             labels = [instance['labels'] for instance in instances]
         if "dataset_name" in instances[0]:
@@ -397,7 +401,8 @@ class PaddedCollatorForActionPrediction:
             input_ids=input_ids,
             attention_mask=attention_mask,
             action=action,
-            proprio=proprios if self.use_state_input else None
+            proprio=proprios if self.use_state_input else None,
+            hz=hz_values if self.use_hz_input else None
         )
         if dataset_names is not None:
             output["dataset_names"] = dataset_names

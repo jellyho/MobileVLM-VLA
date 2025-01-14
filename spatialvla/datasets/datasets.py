@@ -29,7 +29,7 @@ from spatialvla.mobilevlm.conversation import conv_templates, SeparatorStyle
 from spatialvla.datasets.rlds.utils.data_utils import tree_map
 # from prismatic.vla.action_tokenizer import ActionTokenizer
 from spatialvla.datasets.rlds import make_interleaved_dataset, make_single_dataset
-from spatialvla.datasets.rlds.oxe import OXE_NAMED_MIXTURES, get_oxe_dataset_kwargs_and_weights
+from spatialvla.datasets.rlds.oxe import OXE_NAMED_MIXTURES, get_oxe_dataset_kwargs_and_weights, hz_dict
 from spatialvla.datasets.rlds.utils.data_utils import NormalizationType
 from transformers import PreTrainedTokenizerBase
 # HuggingFace Default / LLaMa-2 IGNORE_INDEX (for labels)
@@ -44,13 +44,23 @@ class RLDSBatchTransform:
     future_action_window_size: int = 0
     use_state_input: bool = False
     action_tokenizer: PreTrainedTokenizerBase = None
+    use_hz_input: bool = False
 
     def __call__(self, rlds_batch: Dict[str, Any]) -> Dict[str, Any]:
         """Converts a RLDS batch to the format expected by the OpenVLA collator/models."""
         dataset_name, action = rlds_batch["dataset_name"], torch.Tensor(np.array(rlds_batch["action"])).to(torch.float16)
+
+        ##################### # This should deal with multi-views?
         imgs = []
         for img in rlds_batch["observation"]["image_primary"]:
             imgs.append(Image.fromarray(img))
+        if 'image_secondary' in rlds_batch['observation'].keys():
+            for img in rlds_batch["observation"]["image_secondary"]:
+                imgs.append(Image.fromarray(img))
+        if 'image_wrist' in rlds_batch['observation'].keys():
+            for img in rlds_batch["observation"]["image_wrist"]:
+                imgs.append(Image.fromarray(img))
+        ######################
         # pil = Image.fromarray(rlds_batch["observation"]["image_primary"][0])
         new_img = process_images(imgs, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(torch.float16)
 
@@ -77,9 +87,15 @@ class RLDSBatchTransform:
         else:
             labels = None
 
+        if self.use_hz_input:
+            hz = hz_dict[dataset_name.decode()]
+            # print(hz)
+        else:
+            hz = None
+
         proprio = torch.Tensor(rlds_batch['observation']['proprio']) if self.use_state_input else None
 
-        return dict(pixel_values=new_img, input_ids=input_ids, labels=labels, action=action, proprio=proprio, dataset_name=dataset_name, img=img)
+        return dict(pixel_values=new_img, input_ids=input_ids, labels=labels, action=action, proprio=proprio, dataset_name=dataset_name, img=img, hz=hz)
 
 
 class RLDSDataset(IterableDataset):
@@ -113,7 +129,7 @@ class RLDSDataset(IterableDataset):
         per_dataset_kwargs, weights = get_oxe_dataset_kwargs_and_weights(
             self.data_root_dir,
             mixture_spec,
-            load_camera_views=("primary",),
+            load_camera_views=("primary",), ###################??????
             load_depth=False,
             load_proprio=use_state_input,
             load_language=True,

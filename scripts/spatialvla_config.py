@@ -136,6 +136,7 @@ class ModelArguments:
     action_dim: int = field(default=7)
     action_len: int = field(default=1)
     use_state_input: bool = field(default=False)
+    use_hz_input: bool = field(default=False)
     state_dim: int = field(default=8)
 
 @dataclass

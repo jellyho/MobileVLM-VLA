@@ -27,7 +27,7 @@ tasks = [
     'widowx_put_eggplant_in_basket'
 ]
 unnorm_key = 'bridge_oxe'
-max_grp = -2.0
+max_grp = 2.0
 
 frames = []
 grps = []
@@ -63,7 +63,8 @@ for task_name in tasks:
             #     grp = 0.1
             # else:
             #     grp = 0
-            action[-1] = grp * max_grp + max_grp / 2
+            # action[-1] = grp * max_grp + max_grp / 2
+            action[-1] = grp
             grps.append(grp)
             obs, reward, done, truncated, info = env.step(action)
             frames.append(image)

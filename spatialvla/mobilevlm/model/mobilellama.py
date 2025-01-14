@@ -9,7 +9,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler 
 from spatialvla.mobilevlm.model.mobilevlm import MobileVLMMetaModel, MobileVLMMetaForCausalLM
 from spatialvla.mobilevlm.model.action_heads import MLPHead, ContinuousActionHead, MAPHead
-from spatialvla.mobilevlm.model.diffusion_heads import DiffusionActionHead, DiffusionPolicyHead, DiTModules, FlowMatchingActionHead, DiffusionPolicyHead2, FlowMatchingDiffusionPolicyHead
+from spatialvla.mobilevlm.model.diffusion_heads import DiffusionActionHead, DiffusionPolicyHead, DiTModules, FlowMatchingActionHead, DiffusionPolicyHead2, FlowMatchingDiffusionPolicyHead, TimestepEmbedder
 from spatialvla.mobilevlm.action_tokenizer import ActionTokenizer
 from spatialvla.mobilevlm.model.bridger.model.stochastic_interpolants import StochasticInterpolants
 
@@ -63,6 +63,15 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                 nn.Parameter(torch.empty(1, 1, config.hidden_size), requires_grad=True),
             )
             nn.init.xavier_uniform_(self.state_pos.data)
+
+        if hasattr(config, "use_hz_input") and config.use_hz_input:
+            self.hz_proj = TimestepEmbedder(config.hidden_size)
+            self.register_parameter(
+                "hz_pos",
+                nn.Parameter(torch.empty(1, 1, config.hidden_size), requires_grad=True),
+            )
+            nn.init.xavier_uniform_(self.hz_pos.data)
+
         if config.head_args:
             if config.head_args['head_type'] == 'MLP':
                 self.action_head = MLPHead(config.hidden_size, config.head_args['action_hidden_sizes'], config.action_dim * config.action_len)
@@ -153,6 +162,10 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         state_embeds = self.state_proj(states) + self.state_pos # B, 1, 2048
         return state_embeds
 
+    def get_hz_embeds(self, hz):
+        hz_embeds = self.hz_proj(states) + self.hz_pos # B, 1, 2048
+        return hz_embeds
+
     def get_action_pos_embeds(self, batch_size):
         action_pos_embeds = repeat(self.action_pos, '1 l a -> B l a', B=batch_size)
         return action_pos_embeds
@@ -170,6 +183,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         return_dict: Optional[bool] = True,
         actions: Optional[torch.Tensor] = None,
         states: Optional[torch.Tensor] = None,
+        hz: Optional[torch.Tensor] = None,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states)
@@ -179,6 +193,9 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         ## Prepare state tokens
         if hasattr(self.config, "use_state_input") and self.config.use_state_input and states is not None:
             additional_modality.append(self.get_state_embeds(states))
+
+        if hasattr(self.config, "use_hz_input") and self.config.use_hz_input and hz is not None:
+            additional_modality.append(self.get_hz_embeds(hz))
 
         ## Prepare action positional token ## TURN OFF for older verison of octo policy
         if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMathingDiffusionPolicy']:
