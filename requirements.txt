@@ -20,5 +20,5 @@ fastapi==0.103.0
 einops==0.6.1
 einops-exts==0.0.4
 timm==0.9.12
-flash-attn==2.3.2
+dlimp @ git+https://github.com/kvablack/dlimp@5edaa4691567873d495633f2708982b42edf1972
 

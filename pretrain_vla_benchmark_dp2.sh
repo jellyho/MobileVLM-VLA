@@ -33,6 +33,7 @@ srun --gres=gpu:$1 --cpus-per-task=16 --job-name=vla_bench torchrun --rdzv_id=$S
     --batch_size 32 \
     --image_aug true \
     --wandb_project "VLA_BENCHMARK_DP" \
-    --enable_autotune true
+    --enable_autotune true \
+    --resume true
     
 sleep 60
