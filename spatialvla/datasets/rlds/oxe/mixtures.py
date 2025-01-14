@@ -53,6 +53,21 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
         ("toto", 1.0),
     ],
 
+    "rtx-remix": [
+        ("fractal20220817_data", 1.0 / 40.9 * 42.5),                # Google RT-1 Robot Data (Large-Scale)
+        ("kuka", 1.0 / 24.9 * 12.1),
+        ("bridge_oxe", 1.0 / 22.7 * 19.9)                                   # Version of Bridge V2 in Open-X GCP Bucket
+        # ("bridge_orig", 1.0),                                   # Original Version of Bridge V2 from Project Website
+        ("taco_play", 1.0 / 0.60 * 0.63),
+        ("jaco_play", 1.0 / 0.81 * 0.39),
+        ("berkeley_cable_routing", 1.0 / 0.43 * 0.20),
+        ("roboturk", 1.0 / 1.94 * 1.14),
+        # ("nyu_door_opening_surprising_effectiveness", 5.0),   # Note --> only contains wrist camera images (skip?)
+        ("viola", 1.0 / 0.80 * 1.51),
+        ("berkeley_autolab_ur5", 1.0 / 1.01 * 2.37),
+        ("toto", 1.0 / 3.42 * 16.3),
+    ],
+
     "rtx_franka": [
         ("fractal20220817_data", 0.54087122203),                # Google RT-1 Robot Data (Large-Scale)
         ("kuka", 0.8341046294),
