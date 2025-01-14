@@ -52,6 +52,7 @@ hz_dict = {
     "roboturk_real_towercreation": 10,
     "roboturk_real_laundrylayout": 10,
     "roboturk_real_objectsearch": 10,
+    "roboturk": 10,
     "aloha_mobile": 50,
     "aloha_static": 50,
     "roboset": 5,

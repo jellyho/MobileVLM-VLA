@@ -40,6 +40,7 @@ def process_images(images, image_processor, model_cfg):
     image_aspect_ratio = getattr(model_cfg, "image_aspect_ratio", 'pad')
     new_images = []
     if image_aspect_ratio == 'pad':
+        # print(images)
         for image in images:
             image = expand2square(image, tuple(int(x*255) for x in image_processor.image_mean))
             image = image_processor.preprocess(image, return_tensors='pt')['pixel_values'][0]

@@ -88,7 +88,8 @@ batch_transform = RLDSBatchTransform(
     use_state_input=model_args.use_state_input,
     action_tokenizer=action_tokenizer,
     window_size=1,
-    future_action_window_size=model_args.action_len - 1
+    future_action_window_size=model_args.action_len - 1,
+    use_hz_input=model_args.use_hz_input
 )
 
 dataset = RLDSDataset(
@@ -109,7 +110,8 @@ collator = PaddedCollatorForActionPrediction(
     tokenizer.pad_token_id, 
     padding_side='right',
     use_state_input=model_args.use_state_input,
-    use_label=(model.config.head_args['head_type'] == 'BR')
+    use_label=(model.config.head_args['head_type'] == 'BR'),
+    use_hz_input=model_args.use_hz_input
 )
 
 dataloader = DataLoader(
@@ -219,7 +221,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 attention_mask=batch['attention_mask'].to(device_id),
                 actions=batch['action'].to(device_id),
                 states=batch['proprio'] if model_args.use_state_input else None,
-                labels=batch['labels'] if model.module.config.head_args['head_type'] == 'BR' else None
+                labels=batch['labels'] if model.module.config.head_args['head_type'] == 'BR' else None,
+                hz=batch['hz'].to(device_id)
             )
             if model.module.config.head_args['head_type'] == 'BR':
                 action_logits = loss.logits[:, -51:-1]
@@ -276,7 +279,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                         attention_mask=batch['attention_mask'].to(device_id),
                         use_cache=True,
                         states=batch['proprio'] if model_args.use_state_input else None,
-                        prior_actions=batch['action'].to(device_id)
+                        prior_actions=batch['action'].to(device_id),
+                        hz=batch['hz'].to(device_id)
                     )
                     prediction_time = float(time.time() - start) / training_args.batch_size
                 action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')

@@ -9,6 +9,7 @@ from spatialvla.mobilevlm.model.conditional_unet1d import ConditionalUnet1D
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 from diffusers.schedulers.scheduling_dpmsolver_multistep import DPMSolverMultistepScheduler
+import math
 
 ############## Pytorch Version of Octo Diffusion Head #################
 class FourierFeatures(nn.Module):

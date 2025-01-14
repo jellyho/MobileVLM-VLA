@@ -163,7 +163,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         return state_embeds
 
     def get_hz_embeds(self, hz):
-        hz_embeds = self.hz_proj(states) + self.hz_pos # B, 1, 2048
+        hz_embeds = self.hz_proj(hz) + self.hz_pos # B, 1, 2048
         return hz_embeds
 
     def get_action_pos_embeds(self, batch_size):
@@ -297,7 +297,8 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         images: Optional[torch.FloatTensor] = None,
         num_denoise_steps: Optional[int] = None,
         states: Optional[torch.Tensor] = None,
-        prior_actions = None # For BR
+        prior_actions = None, # For BR,
+        hz=None
     ):
         # Prepare denoising step for DiT
         batch_size = input_ids.shape[0]
@@ -306,6 +307,9 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         ## Prepare state tokens
         if hasattr(self.config, "use_state_input") and self.config.use_state_input and states is not None:
             additional_modality.append(self.get_state_embeds(states))
+
+        if hasattr(self.config, "use_hz_input") and self.config.use_hz_input and hz is not None:
+            additional_modality.append(self.get_hz_embeds(hz))
 
         ## Prepare action positional token ## TURN OFF for older verison of octo policy
         if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMatchingDiffusionPolicy']:

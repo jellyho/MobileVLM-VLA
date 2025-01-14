@@ -68,17 +68,17 @@ OXE_NAMED_MIXTURES: Dict[str, List[Tuple[str, float]]] = {
     # ],
 
     "rtx-remix": [
-        ("berkeley_autolab_ur5", 0.02368840016424656),
-        ("berkeley_cable_routing", 0.0019966200925409794),
-        ("bridge", 0.1991041600704193),
-        ("jaco_play", 0.0038572715129703283),
-        ("kuka", 0.12065707892179489),
-        ("roboturk", 0.011355401016771793),
-        ("rt1", 0.3944754898548126),
-        ("taco_play", 0.05253653367981315),
-        ("toto", 0.19304856657981873),
-        ("viola", 0.015149127691984177),
-    ],
+            ("berkeley_autolab_ur5", 0.06005037264283546),
+            ("berkeley_cable_routing", 0.005061455385417833),
+            ("bridge_oxe", 0.5047313843090732),
+            ("jaco_play", 0.009778228590044982),
+            ("kuka", 0.3058671122157752),
+            ("roboturk", 0.02878607494967854),
+            ("fractal20220817_data", 1.0),
+            ("taco_play", 0.13318072993368815),
+            ("toto", 0.48938038368586745),
+            ("viola", 0.03840321662965635),
+        ],
 
     "rtx_franka": [
         ("fractal20220817_data", 0.54087122203),                # Google RT-1 Robot Data (Large-Scale)

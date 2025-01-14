@@ -34,7 +34,7 @@ from spatialvla.datasets.rlds.utils.data_utils import NormalizationType
 from transformers import PreTrainedTokenizerBase
 # HuggingFace Default / LLaMa-2 IGNORE_INDEX (for labels)
 IGNORE_INDEX = -100
-
+import random
 
 @dataclass
 class RLDSBatchTransform:
@@ -52,14 +52,25 @@ class RLDSBatchTransform:
 
         ##################### # This should deal with multi-views?
         imgs = []
-        for img in rlds_batch["observation"]["image_primary"]:
-            imgs.append(Image.fromarray(img))
-        if 'image_secondary' in rlds_batch['observation'].keys():
+        # if 'image_secondary' in rlds_batch['observation'].keys():
+        #     for img in rlds_batch["observation"]["image_secondary"]:
+        #         if img.shape[0] != 1:
+        #             imgs.append(Image.fromarray(img))
+        # for img in rlds_batch["observation"]["image_primary"]:
+        #     imgs.append(Image.fromarray(img))
+        secondary_probability = 0.5
+        sample = 1.0
+        if "image_secondary" in rlds_batch["observation"].keys():
             for img in rlds_batch["observation"]["image_secondary"]:
+                if img.shape[0] != 1: # Sencodary exists
+                    sample = random.random()
+                    if sample < secondary_probability:
+                        imgs.append(Image.fromarray(img))
+        # If secondary images were not chosen, append primary images
+        if sample >= secondary_probability:
+            for img in rlds_batch["observation"]["image_primary"]:
                 imgs.append(Image.fromarray(img))
-        if 'image_wrist' in rlds_batch['observation'].keys():
-            for img in rlds_batch["observation"]["image_wrist"]:
-                imgs.append(Image.fromarray(img))
+                    
         ######################
         # pil = Image.fromarray(rlds_batch["observation"]["image_primary"][0])
         new_img = process_images(imgs, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(torch.float16)
@@ -129,7 +140,7 @@ class RLDSDataset(IterableDataset):
         per_dataset_kwargs, weights = get_oxe_dataset_kwargs_and_weights(
             self.data_root_dir,
             mixture_spec,
-            load_camera_views=("primary",), ###################??????
+            load_camera_views=("primary","secondary"), ###################??????
             load_depth=False,
             load_proprio=use_state_input,
             load_language=True,
