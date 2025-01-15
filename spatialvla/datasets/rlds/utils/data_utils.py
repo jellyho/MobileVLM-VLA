@@ -354,9 +354,7 @@ class PaddedCollatorForActionPrediction:
         pixel_values = [instance["pixel_values"] for instance in instances]
         if self.use_hz_input:
             hz_values = [instance['hz'] for instance in instances]
-            # print(hz_values)
             hz_values = torch.tensor(hz_values).unsqueeze(-1)
-            # print(hz_values.shape)
         if self.use_label:
             labels = [instance['labels'] for instance in instances]
         if "dataset_name" in instances[0]:

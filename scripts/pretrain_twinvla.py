@@ -54,19 +54,23 @@ if training_args.bf16:
     dtype = torch.bfloat16
 if training_args.fp16:
     dtype = torch.float16
-tokenizer, model, image_processor, _ = load_twinvla_from_singlevla(
-    model_args.single_model_path, 
-    load_8bit, 
-    load_4bit,
-    device=device_id,
-    dtype=dtype
-)
-# tokenizer, model, image_processor, _ = load_vla(
-#     'checkpoints/bridge_rt1',
-#     load_8bit=False, 
-#     load_4bit=False,
-#     device='cuda',
-# )
+    
+if training_args.resume:
+    tokenizer, model, image_processor, _ = load_twinvla(
+        model_args.output_dir,
+        load_8bit=False,
+        load_4bit=False,
+        device=device_id,
+        dtype=dtype
+    )
+else:
+    tokenizer, model, image_processor, _ = load_twinvla_from_singlevla(
+        model_args.single_model_path, 
+        load_8bit, 
+        load_4bit,
+        device=device_id,
+        dtype=dtype
+    )
 model.config.use_cache = False
 model = model.to(device_id)
 print('Pretrained VLM Loaded')
@@ -85,7 +89,8 @@ batch_transform = RLDSBatchTransform(
     use_state_input=model_args.use_state_input,
     action_tokenizer=action_tokenizer,
     window_size=1,
-    future_action_window_size=model_args.action_len - 1
+    future_action_window_size=model_args.action_len - 1,
+    use_hz_input=model_args.use_hz_input
 )
 
 dataset = RLDSDataset(
@@ -106,7 +111,8 @@ collator = PaddedCollatorForActionPrediction(
     tokenizer.pad_token_id, 
     padding_side='right',
     use_state_input=model_args.use_state_input,
-    use_label=(model.config.head_args['head_type'] == 'BR')
+    use_label=(model.config.head_args['head_type'] == 'BR'),
+    use_hz_input=model_args.use_hz_input
 )
 
 dataloader = DataLoader(
@@ -127,6 +133,10 @@ if distributed_state.is_main_process:
     save_dataset_statistics(dataset.dataset_statistics, training_args.output_dir)
 temp_dir = f'{training_args.output_dir}_tmp'
 print('Dataset Loaded')
+
+if training_args.freeze_vision_backbone:
+    for param in model.model.vision_tower.parameters():
+        param.requires_grad = False
 
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
 decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
@@ -197,7 +207,7 @@ else:
 
 ## Training LOOP!
 print('Training Start')
-with tqdm(total=training_args.max_steps, leave=False) as progress:
+with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
     model.train()
     optimizer.zero_grad()
     for batch_idx, batch in enumerate(dataloader):
@@ -210,8 +220,9 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 images=batch['pixel_values'].to(device_id),
                 attention_mask=batch['attention_mask'].to(device_id),
                 actions=batch['action'].to(device_id),
-                states=batch['proprio'] if model_args.use_state_input else None,
-                labels=batch['labels'] if model.module.config.head_args['head_type'] == 'BR' else None
+                states=batch['proprio'].to(device_id) if model_args.use_state_input else None,
+                labels=batch['labels'] if model.module.config.head_args['head_type'] == 'BR' else None,
+                hz=batch['hz'].to(device_id) if model_args.use_hz_input else None
             )
             if model.module.config.head_args['head_type'] == 'BR':
                 action_logits = loss.logits[:, -51:-1]
@@ -267,8 +278,9 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                         images=batch['pixel_values'].to(device_id),
                         attention_mask=batch['attention_mask'].to(device_id),
                         use_cache=True,
-                        states=batch['proprio'] if model_args.use_state_input else None,
-                        prior_actions=batch['action'].to(device_id)
+                        states=batch['proprio'].to(device_id) if model_args.use_state_input else None,
+                        prior_actions=batch['action'].to(device_id),
+                        hz=batch['hz'].to(device_id) if model_args.use_hz_input else None,
                     )
                     prediction_time = float(time.time() - start) / training_args.batch_size
                 action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')

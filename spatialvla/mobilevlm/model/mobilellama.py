@@ -197,7 +197,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         if hasattr(self.config, "use_hz_input") and self.config.use_hz_input and hz is not None:
             additional_modality.append(self.get_hz_embeds(hz))
 
-        ## Prepare action positional token ## TURN OFF for older verison of octo policy
+        ## Prepare action positional token
         if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMathingDiffusionPolicy']:
             additional_modality.append(self.get_action_pos_embeds(input_ids.shape[0]))
         

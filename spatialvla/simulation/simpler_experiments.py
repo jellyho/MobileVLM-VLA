@@ -9,7 +9,7 @@ from PIL import Image
 checkpoint = "checkpoints/rt1_512_16_4gpu"
 
 model = VLAModel(checkpoint)
-rollout_per_env = 2
+rollout_per_env = 4
 tasks = [
     'google_robot_pick_coke_can',
     'google_robot_pick_object',
@@ -20,14 +20,14 @@ tasks = [
 ]
 max_grp = -2.0
 unnorm_key = 'fractal20220817_data'
-tasks = [
-    'widowx_spoon_on_towel',
-    'widowx_carrot_on_plate',
-    'widowx_stack_cube',
-    'widowx_put_eggplant_in_basket'
-]
-unnorm_key = 'bridge_oxe'
-max_grp = 2.0
+# tasks = [
+#     'widowx_spoon_on_towel',
+#     'widowx_carrot_on_plate',
+#     'widowx_stack_cube',
+#     'widowx_put_eggplant_in_basket'
+# ]
+# unnorm_key = 'bridge_oxe'
+# max_grp = 2.0
 
 frames = []
 grps = []
@@ -63,8 +63,8 @@ for task_name in tasks:
             #     grp = 0.1
             # else:
             #     grp = 0
-            # action[-1] = grp * max_grp + max_grp / 2
-            action[-1] = grp
+            action[-1] = grp * max_grp - max_grp / 2
+            # action[-1] = grp
             grps.append(grp)
             obs, reward, done, truncated, info = env.step(action)
             frames.append(image)

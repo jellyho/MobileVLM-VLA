@@ -52,20 +52,13 @@ class RLDSBatchTransform:
 
         ##################### # This should deal with multi-views?
         imgs = []
-        # if 'image_secondary' in rlds_batch['observation'].keys():
-        #     for img in rlds_batch["observation"]["image_secondary"]:
-        #         if img.shape[0] != 1:
-        #             imgs.append(Image.fromarray(img))
-        # for img in rlds_batch["observation"]["image_primary"]:
-        #     imgs.append(Image.fromarray(img))
-        secondary_probability = 0.5
+        secondary_probability = 0.4
         sample = 1.0
-        if "image_secondary" in rlds_batch["observation"].keys():
-            for img in rlds_batch["observation"]["image_secondary"]:
-                if img.shape[0] != 1: # Sencodary exists
-                    sample = random.random()
-                    if sample < secondary_probability:
-                        imgs.append(Image.fromarray(img))
+        for img in rlds_batch["observation"]["image_secondary"]:
+            if img.shape[0] != 1: # Sencodary exists
+                sample = random.random()
+                if sample < secondary_probability:
+                    imgs.append(Image.fromarray(img))
         # If secondary images were not chosen, append primary images
         if sample >= secondary_probability:
             for img in rlds_batch["observation"]["image_primary"]:
@@ -100,7 +93,6 @@ class RLDSBatchTransform:
 
         if self.use_hz_input:
             hz = hz_dict[dataset_name.decode()]
-            # print(hz)
         else:
             hz = None
 
@@ -160,7 +152,7 @@ class RLDSDataset(IterableDataset):
             dataset_kwargs_list=per_dataset_kwargs,
             shuffle_buffer_size=shuffle_buffer_size,
             sample_weights=weights,
-            balance_weights=True,
+            balance_weights=False,
             traj_transform_threads=len(mixture_spec),
             traj_read_threads=len(mixture_spec),
             train=train,

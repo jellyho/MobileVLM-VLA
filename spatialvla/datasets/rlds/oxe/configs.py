@@ -67,6 +67,7 @@ vla_benchmark_bimanual_config = {
 
 # === Individual Dataset Configs ===
 OXE_DATASET_CONFIGS = {
+    'transfer_cup': vla_benchmark_bimanual_config,
     'transfer_tissue': vla_benchmark_bimanual_config,
     'vla_benchmark_joint': vla_benchmark_config,
     'vla_benchmark_ee': vla_benchmark_config,

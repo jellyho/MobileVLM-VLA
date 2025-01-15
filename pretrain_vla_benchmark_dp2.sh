@@ -6,9 +6,9 @@ while :; do
     (echo >/dev/tcp/localhost/$RDZV_PORT) &>/dev/null || break
 done
 # srun --gres=gpu:$1 
-export OMP_NUM_THREADS=16
+# export OMP_NUM_THREADS=64
 
-srun --gres=gpu:$1 --cpus-per-task=16 --job-name=vla_bench torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
+srun --gres=gpu:$1 --cpus-per-task=64 --job-name=vla_bench torchrun --rdzv_id=$SLURM_JOB_ID --rdzv_backend=static --master_port=$RDZV_PORT --nnodes 1 --nproc-per-node $1 scripts/pretrain.py \
     --learning_rate 1e-4 \
     --lr_scheduler_type "cosine" \
     --warmup_ratio 0.03 \
@@ -20,7 +20,7 @@ srun --gres=gpu:$1 --cpus-per-task=16 --job-name=vla_bench torchrun --rdzv_id=$S
     --weight_decay 1e-6 \
     --data_root_dir "/home/shared/vla_benchmark_rlds" \
     --data_mix "vla_benchmark_ee" \
-    --output_dir "checkpoints/vla_benchmark_dp2_$1gpu_vf_ee_hz" \
+    --output_dir "checkpoints/vla_benchmark_dp2_$1gpu_vf_ee_hz_test" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \
@@ -35,6 +35,5 @@ srun --gres=gpu:$1 --cpus-per-task=16 --job-name=vla_bench torchrun --rdzv_id=$S
     --wandb_project "VLA_BENCHMARK_DP" \
     --enable_autotune true \
     --use_hz_input true \
-    --resume false
-    
-sleep 60
+    --resume false \
+    --num_parallel_calls 64

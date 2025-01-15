@@ -186,7 +186,6 @@ class TrainingArguments(transformers.TrainingArguments):
     weight_decay: float = field(default=0.01)
     adam_epsilon: float= field(default=1e-8)
     gradient_accumulation_steps: int = field(default=1)
-    save_optimizer: bool = field(default=True)
 
     # Quantization
     double_quant: bool = field(default=True)

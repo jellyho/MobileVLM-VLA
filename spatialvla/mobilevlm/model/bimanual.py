@@ -125,6 +125,7 @@ class TwinVLA(SpatialVLAForCausalLM):
         return_dict: Optional[bool] = True,
         actions: Optional[torch.Tensor] = None,
         states: Optional[torch.Tensor] = None,
+        hz = None
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states)
@@ -135,6 +136,9 @@ class TwinVLA(SpatialVLAForCausalLM):
         ## Prepare state tokens
         if hasattr(self.config, "use_state_input") and self.config.use_state_input and states is not None:
             additional_modality.append(self.get_state_embeds(states))
+
+        if hasattr(self.config, "use_hz_input") and self.config.use_hz_input and hz is not None:
+            additional_modality.append(self.get_hz_embeds(hz))
 
         ## Prepare action positional token ## TURN OFF for older verison of octo policy
         if self.config.head_args['head_type'] == 'Diffusion':
@@ -182,6 +186,8 @@ class TwinVLA(SpatialVLAForCausalLM):
 
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
+
+        connection_interval = self.config.connection_density
 
         ## norm, attn, norm, mlp
         for layer_idx in range(24):
@@ -271,6 +277,7 @@ class TwinVLA(SpatialVLAForCausalLM):
         return_dict: Optional[bool] = True,
         actions: Optional[torch.Tensor] = None,
         states: Optional[torch.Tensor] = None,
+        hz = None
     ):
         outputs, all_hidden_states, all_self_attns, inputs_lr, attention_mask = self.joint_forward(
             input_ids,
@@ -284,7 +291,8 @@ class TwinVLA(SpatialVLAForCausalLM):
             images,
             return_dict,
             actions,
-            states
+            states,
+            hz
         )
 
         loss = 0
@@ -324,6 +332,7 @@ class TwinVLA(SpatialVLAForCausalLM):
         states: Optional[torch.Tensor] = None,
         prior_actions = None,
         output_attn = False,
+        hz = None
     ):
         output_attentions = output_attn
         output_hidden_states = False
@@ -340,7 +349,8 @@ class TwinVLA(SpatialVLAForCausalLM):
             images,
             return_dict,
             prior_actions,
-            states
+            states,
+            hz
         )
 
         predicted_actions = []

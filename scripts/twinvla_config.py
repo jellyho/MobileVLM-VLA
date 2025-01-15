@@ -92,14 +92,17 @@ class ModelArguments:
     single_model_config: Optional[str] = field(default="remyxai/SpaceLLaVA-lite")
     action_head: str = field(default='BR')
     head_args: Dict[str, Any] = field(default_factory=lambda: BR) 
-    action_dim: int = field(default=7)
-    action_len: int = field(default=8)
+    action_dim: int = field(default=7) # This should be same as single arm config
+    action_len: int = field(default=8) # This hould be same as single arm config
     use_state_input: bool = field(default=False)
+    use_hz_input: bool = field(default=False)
     state_dim: int = field(default=8)
+    connection_interval: int = field(default=1) # 1 to 12?
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     resume: bool = field(default=False)
+
     output_dir: str = field(default='checkpoints/SpatialVLA_highlr')
     data_root_dir: str = field(default='/home/shared/rlds_datasets')
     data_mix: str = field(default='libero_object_no_noops')
@@ -135,6 +138,7 @@ class TrainingArguments(transformers.TrainingArguments):
 
     learning_rate: float = field(default=1e-4)
     lr_scheduler_type: str = field(default='constant')
+    freeze_vision_backbone: bool = field(default=False)
     warmup_ratio: float = field(default=0.06)
     max_grad_norm: float = field(default=1.0)
     weight_decay: float = field(default=0.01)
