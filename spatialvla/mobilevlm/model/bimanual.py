@@ -141,7 +141,7 @@ class TwinVLA(SpatialVLAForCausalLM):
             additional_modality.append(self.get_hz_embeds(hz))
 
         ## Prepare action positional token ## TURN OFF for older verison of octo policy
-        if self.config.head_args['head_type'] == 'Diffusion':
+        if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMathingDiffusionPolicy']:
             additional_modality.append(self.get_action_pos_embeds(input_ids.shape[0]))
 
         inputs_lr = self.prepare_inputs_labels_for_multimodal_twinvla(
@@ -322,7 +322,7 @@ class TwinVLA(SpatialVLAForCausalLM):
             # Actions Batch, len, dim
 
             # Action decoding
-            if self.config.head_args['head_type'] == 'Diffusion':
+            if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMatchingDiffusionPolicy']:
                 loss += self.action_head.loss(action_hidden, actions[:, :, idx*self.config.action_dim:(idx+1)*self.config.action_dim], attention_mask=inputs_lr[idx][1])
             elif self.config.head_args['head_type'] == 'DiffusionPolicy':
                 loss += self.action_head.loss(action_hidden, actions[:, :, idx*self.config.action_dim:(idx+1)*self.config.action_dim])
@@ -377,8 +377,8 @@ class TwinVLA(SpatialVLAForCausalLM):
             elif self.config.head_args['hidden_projection'] == 'pass':
                 action_hidden = hidden # [batch, token_num, dim]
 
-            if self.config.head_args['head_type'] == 'Diffusion':
-                predicted_action = self.action_head.predict_action(action_hidden, attention_mask=inputs_lr[idx][1])
+            if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMatchingDiffusionPolicy']:
+                predicted_action = self.action_head.predict_action(action_hidden, attention_mask=inputs_lr[idx][1], num_denoise_steps=num_denoise_steps)
             elif self.config.head_args['head_type'] == 'DiffusionPolicy':
                 predicted_action = self.action_head.predict_action(action_hidden)
             else:
