@@ -36,6 +36,20 @@ DiffusionHead = {
     'n_diffusion_samples': 1,
 }
 
+FlowMatchingHead = {
+    'head_type': 'FlowMatching',
+    'hidden_projection': 'pass', # If use_map is true, set this to pass
+    'use_map' : False,
+    'max_action': 5.0,
+    'time_dim':  32,
+    'num_blocks': 3,
+    'dropout_rate': 0.0,
+    'hidden_dim': 512,
+    'use_layer_norm':True,
+    'diffusion_steps': 10,
+    'n_diffusion_samples': 1,
+}
+
 DiffusionPolicyHead = {
     'head_type': 'DiffusionPolicy',
     'hidden_projection': 'pass',  # If use_map is true, set this to pass
@@ -46,6 +60,30 @@ DiffusionPolicyHead = {
     'hidden_dim': 256,
     'use_layer_norm':True,
     'diffusion_steps': 100,
+}
+
+DiffusionPolicyHead2 = {
+    'head_type': 'DiffusionPolicy2',
+    'hidden_projection': 'pass',  # If use_map is true, set this to pass
+    'use_map' : True,
+    'max_action': 5.0,
+    'time_dim':  256,
+    'dropout_rate': 0.0,
+    'hidden_dim': 256,
+    'use_layer_norm':True,
+    'diffusion_steps': 100,
+}
+
+FlowMatchingDiffusionPolicyHead = {
+    'head_type': 'FlowMatchingDiffusionPolicy',
+    'hidden_projection': 'pass',  # If use_map is true, set this to pass
+    'use_map' : True,
+    'max_action': 5.0,
+    'time_dim':  256,
+    'dropout_rate': 0.0,
+    'hidden_dim': 256,
+    'use_layer_norm':True,
+    'diffusion_steps': 10,
 }
 
 DiT = {
@@ -82,8 +120,11 @@ HEAD_ARGS = {
     'MAP': MAPHead,
     'Diffusion': DiffusionHead,
     'DiffusionPolicy': DiffusionPolicyHead,
+    'DiffusionPolicy2': DiffusionPolicyHead2,
+    'FlowMatchingDiffusionPolicy': FlowMatchingDiffusionPolicyHead,
     'DiT': DiT,
-    'BR': BR
+    'BR': BR,
+    'FlowMatching' : FlowMatchingHead
 }
 
 @dataclass

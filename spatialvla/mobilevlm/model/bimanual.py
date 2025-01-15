@@ -28,6 +28,7 @@ class TwinVLAConfig(SpatialVLAConfig):
     model_type = 'twinvla'
     def __init__(self, **kwargs):
         self.training = True
+        self.connection_interval = 1
         super().__init__(**kwargs)
 
 class TwinVLA(SpatialVLAForCausalLM):
@@ -39,7 +40,6 @@ class TwinVLA(SpatialVLAForCausalLM):
         self.post_init()
         if config.training == False:
             self.prepare_twinvla()
-        
 
     def prepare_twinvla(self):
         # make twin tower
@@ -173,8 +173,9 @@ class TwinVLA(SpatialVLAForCausalLM):
         atm= self.model_r._prepare_decoder_attention_mask(
             inputs_lr[0][1], (batch_size, seq_length), inputs_lr[0][3], past_key_values_length
         )
+        attention_mask_split = atm # for independent self-attn
         atm = torch.cat([atm, atm], axis=2)
-        attention_mask = torch.cat([atm, atm], axis=3)
+        attention_mask = torch.cat([atm, atm], axis=3) # for joint self-attn
     
         ######
 
@@ -187,7 +188,7 @@ class TwinVLA(SpatialVLAForCausalLM):
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
 
-        connection_interval = self.config.connection_density
+        connection_interval = self.config.connection_interval
 
         ## norm, attn, norm, mlp
         for layer_idx in range(24):
@@ -227,20 +228,32 @@ class TwinVLA(SpatialVLAForCausalLM):
 
                 head_dim = attn.head_dim
                 hidden_size = attn.hidden_size
-            
-            # eager_attention_forward
-            new_q_states = torch.cat(q_states, axis=-2)
-            new_k_states = torch.cat(k_states, axis=-2)
-            new_v_states = torch.cat(v_states, axis=-2)
 
-            attn_weights = torch.matmul(new_q_states, new_k_states.transpose(2, 3)) / math.sqrt(head_dim)
-            attn_weights = attn_weights + attention_mask
-            attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-            attn_output = torch.matmul(attn_weights, new_v_states)
-            attn_output = attn_output.transpose(1, 2).contiguous()
-            attn_output = attn_output.reshape(bsz, -1, hidden_size)
+            if layer_idx % connection_interval == 0:
+                # joint eager_attention_forward
+                new_q_states = torch.cat(q_states, axis=-2)
+                new_k_states = torch.cat(k_states, axis=-2)
+                new_v_states = torch.cat(v_states, axis=-2)
 
-            attn_outputs = torch.split(attn_output, [q_len, q_len], dim=1)
+                attn_weights = torch.matmul(new_q_states, new_k_states.transpose(2, 3)) / math.sqrt(head_dim)
+                attn_weights = attn_weights + attention_mask
+                attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+                attn_output = torch.matmul(attn_weights, new_v_states)
+                attn_output = attn_output.transpose(1, 2).contiguous()
+                attn_output = attn_output.reshape(bsz, -1, hidden_size)
+
+                attn_outputs = torch.split(attn_output, [q_len, q_len], dim=1)
+            else:
+                # split eager_attetnion_forward
+                attn_outputs = []
+                for idx, model in enumerate(models):
+                    attn_weight = torch.matmul(q_states[idx], k_states[idx].transpose(2, 3)) / math.sqrt(head_dim)
+                    attn_weight = attn_weights + attenion_mask
+                    attn_weight = nn.functional.softmax(attn_weight, dim=-1, dtype=torch.float32).to(q_states[idx].dtype)
+                    attn_output = torch.matmul(attn_weight, v_states[idx])
+                    attn_output = attn_output.transpose(1, 2).contiguous()
+                    attn_output = attn_output.reshape(bsz, -1, hidden_size)
+                    attn_outputs.append(attn_output)
 
             for idx, model in enumerate(models):
                 hidden_statess[idx] = self.attn(model, layer_idx).o_proj(attn_outputs[idx]) + residuals[idx]

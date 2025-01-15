@@ -50,7 +50,6 @@ FlowMatchingHead = {
     'n_diffusion_samples': 1,
 }
 
-
 DiffusionPolicyHead = {
     'head_type': 'DiffusionPolicy',
     'hidden_projection': 'pass',  # If use_map is true, set this to pass
