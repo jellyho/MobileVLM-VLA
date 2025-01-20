@@ -137,7 +137,7 @@ class ModelArguments:
     use_state_input: bool = field(default=False)
     use_hz_input: bool = field(default=False)
     state_dim: int = field(default=8)
-    double_action: bool = field(defualt=False)
+    # double_action: bool = field(defualt=False)
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):

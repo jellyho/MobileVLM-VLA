@@ -67,4 +67,6 @@ hz_dict = {
     "bridge_oxe": 5,
     "vla_benchmark_ee": 20,
     "vla_benchmark": 20,
+    "singlevla_benchmark": 20,
+    "twinvla_benchmark": 20,
 }

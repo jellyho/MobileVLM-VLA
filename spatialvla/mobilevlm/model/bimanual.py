@@ -248,7 +248,7 @@ class TwinVLA(SpatialVLAForCausalLM):
                 attn_outputs = []
                 for idx, model in enumerate(models):
                     attn_weight = torch.matmul(q_states[idx], k_states[idx].transpose(2, 3)) / math.sqrt(head_dim)
-                    attn_weight = attn_weights + attenion_mask
+                    attn_weight = attn_weight + attention_mask_split
                     attn_weight = nn.functional.softmax(attn_weight, dim=-1, dtype=torch.float32).to(q_states[idx].dtype)
                     attn_output = torch.matmul(attn_weight, v_states[idx])
                     attn_output = attn_output.transpose(1, 2).contiguous()
@@ -393,7 +393,7 @@ class TwinVLA(SpatialVLAForCausalLM):
         return final_actions
 
 
-def load_twinvla_from_singlevla(single_model_path, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", dtype=torch.bfloat16):
+def load_twinvla_from_singlevla(single_model_path, model_args, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", dtype=torch.bfloat16):
     kwargs = {}
     if load_8bit:
         kwargs['load_in_8bit'] = True
@@ -411,6 +411,9 @@ def load_twinvla_from_singlevla(single_model_path, load_8bit=False, load_4bit=Fa
     print('Loading with', dtype)
     tokenizer = AutoTokenizer.from_pretrained(single_model_path, use_fast=False)
     config = TwinVLAConfig.from_pretrained(single_model_path)
+
+    for key, values in model_args.__dict__.items():
+        setattr(config, key, values)
 
     config.model_type='twinvla'
     model = TwinVLA.from_pretrained(single_model_path, config=config, low_cpu_mem_usage=False, **kwargs)

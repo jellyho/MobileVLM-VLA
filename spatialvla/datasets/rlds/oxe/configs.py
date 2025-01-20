@@ -49,12 +49,28 @@ class ActionEncoding(IntEnum):
     EEF_R6 = 4              # EEF Delta XYZ (3) + R6 (6) + Gripper Open/Close (1)
     # fmt: on
 
+singlevla_benchmark_config = {
+    "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
+    "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+    "state_obs_keys": ["joint_pos"],
+    "state_encoding": StateEncoding.POS_EULER,
+    "action_encoding": ActionEncoding.EEF_POS,
+}
+
 vla_benchmark_config = {
     "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
     "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
     "state_obs_keys": ["joint_pos"],
     "state_encoding": StateEncoding.POS_EULER,
     "action_encoding": ActionEncoding.EEF_POS,
+}
+
+twinvla_benchmark_config = {
+    "image_obs_keys": {"primary": "rightview_image", "secondary": 'leftview_image', "wrist": None},
+    "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+    "state_obs_keys": ["joint_pos"],
+    "state_encoding": StateEncoding.JOINT_BIMANUAL,
+    "action_encoding": ActionEncoding.JOINT_POS_BIMANUAL,
 }
 
 vla_benchmark_bimanual_config = {
@@ -67,6 +83,8 @@ vla_benchmark_bimanual_config = {
 
 # === Individual Dataset Configs ===
 OXE_DATASET_CONFIGS = {
+    'singlevla_benchmark': singlevla_benchmark_config,
+    'twinvla_benchmark': twinvla_benchmark_config,
     'transfer_cup': vla_benchmark_bimanual_config,
     'transfer_tissue': vla_benchmark_bimanual_config,
     'vla_benchmark_joint': vla_benchmark_config,

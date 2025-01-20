@@ -66,6 +66,7 @@ if training_args.resume:
 else:
     tokenizer, model, image_processor, _ = load_twinvla_from_singlevla(
         model_args.single_model_path, 
+        model_args,
         load_8bit, 
         load_4bit,
         device=device_id,
@@ -73,7 +74,8 @@ else:
     )
 model.config.use_cache = False
 model = model.to(device_id)
-print('Pretrained VLM Loaded')
+print('Pretrained SingleVLA Loaded')
+print('interval', model.config.connection_interval)
 
 ## Important!
 if model.config.head_args['head_type'] == 'BR':

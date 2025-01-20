@@ -62,7 +62,7 @@ class GenerateConfig:
     wandb_project: str = "SpatialVLA-LIBERO"        # Name of W&B project to log to (use default!)
     wandb_entity: str = "jellyho_"          # Name of entity to log under
 
-    seed: int = 16                                # Random Seed (for reproducibility)
+    seed: int = 48                              # Random Seed (for reproducibility)
 
     # fmt: on
 
