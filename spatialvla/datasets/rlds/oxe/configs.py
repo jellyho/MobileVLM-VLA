@@ -83,6 +83,8 @@ vla_benchmark_bimanual_config = {
 
 # === Individual Dataset Configs ===
 OXE_DATASET_CONFIGS = {
+    'singlevla_benchmark_ee': singlevla_benchmark_config,
+    'singlevla_benchmark_5hz': singlevla_benchmark_config,
     'singlevla_benchmark': singlevla_benchmark_config,
     'twinvla_benchmark': twinvla_benchmark_config,
     'transfer_cup': vla_benchmark_bimanual_config,

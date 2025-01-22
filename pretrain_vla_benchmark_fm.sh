@@ -19,7 +19,7 @@ srun --job-name=vla_benchmark --cpus-per-task=16 --gres=gpu:$1 torchrun --rdzv_i
     --weight_decay 1e-6 \
     --data_root_dir "/home/shared/vla_benchmark_rlds" \
     --data_mix "vla_benchmark_ee" \
-    --output_dir "checkpoints/vla_benchmark_fm_$1gpu_vf_ee" \
+    --output_dir "checkpoints/singlevla_scratch" \
     --max_grad_norm 1.0 \
     --gradient_accumulation_steps 1 \
     --adam_epsilon 1e-8 \
@@ -27,9 +27,9 @@ srun --job-name=vla_benchmark --cpus-per-task=16 --gres=gpu:$1 torchrun --rdzv_i
     --action_dim 7 \
     --action_len 8 \
     --max_steps 50000 \
-    --save_steps 5000 \
-    --shuffle_buffer_size 20000 \
+    --save_steps 0 \
+    --shuffle_buffer_size 5000 \
     --batch_size 32 \
     --image_aug true \
     --wandb_project "VLA_BENCHMARK_DP" \
-    --resume true
+    --resume false

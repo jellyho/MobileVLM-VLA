@@ -22,7 +22,7 @@ from spatialvla.datasets import RLDSDataset, RLDSBatchTransform
 from spatialvla.datasets.rlds.utils.data_utils import save_dataset_statistics
 from spatialvla.datasets.rlds.utils.data_utils import PaddedCollatorForActionPrediction
 
-from spatialvla.mobilevlm.model.bimanual import load_twinvla_from_singlevla
+from spatialvla.mobilevlm.model.bimanual import load_twinvla_from_singlevla, load_twinvla
 from spatialvla.mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla, load_vla
 from spatialvla.mobilevlm.train.train import find_all_linear_names, get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3
 from twinvla_config import ModelArguments, TrainingArguments, HEAD_ARGS
@@ -35,7 +35,7 @@ from PIL import Image
 
 tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to gpu
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["WANDB_MODE"] = "online"
+os.environ["WANDB_MODE"] = "offline"
 
 distributed_state = PartialState()
 device_id = distributed_state.local_process_index
@@ -57,7 +57,7 @@ if training_args.fp16:
     
 if training_args.resume:
     tokenizer, model, image_processor, _ = load_twinvla(
-        model_args.output_dir,
+        training_args.output_dir,
         load_8bit=False,
         load_4bit=False,
         device=device_id,

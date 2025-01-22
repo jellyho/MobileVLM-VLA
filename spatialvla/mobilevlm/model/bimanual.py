@@ -170,13 +170,30 @@ class TwinVLA(SpatialVLAForCausalLM):
             attention_mask = torch.ones(
                 (batch_size, seq_length_with_past), dtype=torch.bool, device=device
             )
-        atm= self.model_r._prepare_decoder_attention_mask(
-            inputs_lr[0][1], (batch_size, seq_length), inputs_lr[0][3], past_key_values_length
+
+        indep_atm = inputs_lr[0][1]
+        joint_atm = indep_atm.clone()
+
+        seq_len = indep_atm.shape[1]
+        for i, bja in enumerate(joint_atm):
+            invalid = (bja == 0).sum()
+            joint_atm[i, -(invalid+self.config.action_len):] = 0
+
+        indep_atm = self.model_r._prepare_decoder_attention_mask(
+            indep_atm, (batch_size, seq_length), inputs_lr[0][3], past_key_values_length
         )
-        attention_mask_split = atm # for independent self-attn
-        atm = torch.cat([atm, atm], axis=2)
-        attention_mask = torch.cat([atm, atm], axis=3) # for joint self-attn
-    
+        joint_atm = self.model_r._prepare_decoder_attention_mask(
+            joint_atm, (batch_size, seq_length), inputs_lr[0][3], past_key_values_length
+        )
+        attention_mask_split = indep_atm # for independent self-attn
+        # print(indep_atm.shape)
+        attention_mask = indep_atm.repeat(1, 1, 2, 2)
+        attention_mask[:, :, seq_len:, :seq_len] = joint_atm
+        attention_mask[:, :, :seq_len, seq_len:] = joint_atm
+        # atm = torch.cat([atm, atm], axis=2)
+        # attention_mask = torch.cat([atm, atm], axis=3) # for joint self-attn
+        # print(joint_atm == 0)
+        # print(atm.shape)
         ######
 
         models = [self.model_l, self.model_r]

@@ -45,28 +45,42 @@ class RLDSBatchTransform:
     use_state_input: bool = False
     action_tokenizer: PreTrainedTokenizerBase = None
     use_hz_input: bool = False
+    use_multi_view = False
 
     def __call__(self, rlds_batch: Dict[str, Any]) -> Dict[str, Any]:
         """Converts a RLDS batch to the format expected by the OpenVLA collator/models."""
         dataset_name, action = rlds_batch["dataset_name"], torch.Tensor(np.array(rlds_batch["action"])).to(torch.float16)
 
         ##################### # This should deal with multi-views?
-        imgs = []
-        secondary_probability = 0.4
-        sample = 1.0
-        for img in rlds_batch["observation"]["image_secondary"]:
-            if img.shape[0] != 1: # Sencodary exists
-                sample = random.random()
-                if sample < secondary_probability:
+        if not self.use_multi_view:
+            imgs = []
+            secondary_probability = 0.4
+            sample = 1.0
+            for img in rlds_batch["observation"]["image_secondary"]:
+                if img.shape[0] != 1: # Sencodary exists
+                    sample = random.random()
+                    if sample < secondary_probability:
+                        imgs.append(Image.fromarray(img))
+            # If secondary images were not chosen, append primary images
+            if sample >= secondary_probability:
+                for img in rlds_batch["observation"]["image_primary"]:
                     imgs.append(Image.fromarray(img))
-        # If secondary images were not chosen, append primary images
-        if sample >= secondary_probability:
+            new_img = process_images(imgs, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(torch.float16)
+            new_secondary_img = None
+        else:
+            imgs = []
             for img in rlds_batch["observation"]["image_primary"]:
                 imgs.append(Image.fromarray(img))
+            new_img = process_images(imgs, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(torch.float16)
+            imgs = []
+            for img in rlds_batch["observation"]["image_secondary"]:
+                imgs.append(Image.fromarray(img))
+            new_secondary_img = process_images(imgs, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(torch.float16)
+
                     
         ######################
         # pil = Image.fromarray(rlds_batch["observation"]["image_primary"][0])
-        new_img = process_images(imgs, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(torch.float16)
+
 
         # Construct Chat-based Prompt =>> Input is default query + language instruction, output are the action tokens
         conv = conv_templates['v1'].copy()
@@ -98,7 +112,7 @@ class RLDSBatchTransform:
 
         proprio = torch.Tensor(rlds_batch['observation']['proprio']) if self.use_state_input else None
 
-        return dict(pixel_values=new_img, input_ids=input_ids, labels=labels, action=action, proprio=proprio, dataset_name=dataset_name, img=img, hz=hz)
+        return dict(pixel_values=new_img, secondary_pixel_values=new_secondary_img, input_ids=input_ids, labels=labels, action=action, proprio=proprio, dataset_name=dataset_name, img=img, hz=hz)
 
 
 class RLDSDataset(IterableDataset):

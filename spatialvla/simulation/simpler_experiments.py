@@ -6,7 +6,7 @@ from spatialvla.inference import VLAModel
 from PIL import Image
 
 # task_name = "google_robot_pick_coke_can"  # @param ["google_robot_pick_coke_can", "google_robot_move_near", "google_robot_open_drawer", "google_robot_close_drawer", "widowx_spoon_on_towel", "widowx_carrot_on_plate", "widowx_stack_cube", "widowx_put_eggplant_in_basket"]
-checkpoint = "checkpoints/rt1_512_16_4gpu"
+checkpoint = "checkpoints/rtx-remix"
 
 model = VLAModel(checkpoint)
 rollout_per_env = 4
@@ -32,14 +32,14 @@ unnorm_key = 'fractal20220817_data'
 frames = []
 grps = []
 for task_name in tasks:
+    env = simpler_env.make(task_name)
     for trial in range(rollout_per_env):
-        if 'env' in locals():
-            print("Closing existing env")
-            env.close()
-            del env
-        env = simpler_env.make(task_name)
+        # if 'env' in locals():
+        #     print("Closing existing env")
+        #     env.close()
         obs, reset_info = env.reset()
         instruction = env.get_language_instruction()
+        # instruction = env.get_language_instruction()
         print("Reset info", reset_info)
         print("Instruction", instruction)
         done, truncated = False, False
