@@ -58,8 +58,10 @@ class TwinVLA(SpatialVLAForCausalLM):
     def get_model(self):
         if self.prepared:
             if self.tower_flag == 'left':
+                print('left')
                 return self.model_l
             else:
+                print('right')
                 return self.model_r
         else:
             return self.model
@@ -73,20 +75,23 @@ class TwinVLA(SpatialVLAForCausalLM):
     def encode_images(self, images):
         image_features = self.vision_tower(images)
         if self.tower_flag == 'left':
+            print('left, encode')
             image_features = self.model_l.mm_projector(image_features).contiguous()
         elif self.tower_flag == 'right':
+            print('right, encode')
             image_features = self.model_r.mm_projector(image_features).contiguous()
 
         return image_features
 
-    def prepare_inputs_labels_for_multimodal_twinvla(self, input_ids, attention_mask, past_key_values, labels, images, additional_modality=None):
+    def prepare_inputs_labels_for_multimodal_twinvla(self, input_ids, attention_mask, past_key_values, labels, images, images_secondary, additional_modality=None):
         self.tower_flag = 'left'
+        # print(images, image_secondary)
         inputs_left = self.prepare_inputs_labels_for_multimodal(
             input_ids,
             attention_mask,
             past_key_values,
             labels,
-            images,
+            images_secondary if images_secondary is not None else images,
             additional_modality
         )
         self.tower_flag = 'right'
@@ -122,6 +127,7 @@ class TwinVLA(SpatialVLAForCausalLM):
         output_attentions: Optional[bool] = True,
         output_hidden_states: Optional[bool] = True,
         images: Optional[torch.FloatTensor] = None,
+        images_secondary: Optional[torch.FloatTensor] = None,
         return_dict: Optional[bool] = True,
         actions: Optional[torch.Tensor] = None,
         states: Optional[torch.Tensor] = None,
@@ -150,8 +156,11 @@ class TwinVLA(SpatialVLAForCausalLM):
             past_key_values,
             labels, 
             images, 
+            images_secondary,
             additional_modality
         )
+
+        print('inputs_lr is ready')
 
         # pos_ids and attn_mask caluation only once ###
         batch_size, seq_length, _ = inputs_lr[0][3].shape
@@ -304,6 +313,7 @@ class TwinVLA(SpatialVLAForCausalLM):
         output_attentions: Optional[bool] = True,
         output_hidden_states: Optional[bool] = True,
         images: Optional[torch.FloatTensor] = None,
+        images_secondary: Optional[torch.FloatTensor] = None,
         return_dict: Optional[bool] = True,
         actions: Optional[torch.Tensor] = None,
         states: Optional[torch.Tensor] = None,
@@ -319,6 +329,7 @@ class TwinVLA(SpatialVLAForCausalLM):
             output_attentions,
             output_hidden_states,
             images,
+            images_secondary,
             return_dict,
             actions,
             states,
@@ -358,6 +369,7 @@ class TwinVLA(SpatialVLAForCausalLM):
         labels: Optional[torch.LongTensor] = None,
         use_cache: Optional[bool] = None,
         images: Optional[torch.FloatTensor] = None,
+        images_secondary: Optional[torch.FloatTensor] = None,
         num_denoise_steps: Optional[int] = None,
         states: Optional[torch.Tensor] = None,
         prior_actions = None,
@@ -377,6 +389,7 @@ class TwinVLA(SpatialVLAForCausalLM):
             output_attentions,
             output_hidden_states,
             images,
+            images_secondary,
             return_dict,
             prior_actions,
             states,

@@ -69,5 +69,7 @@ hz_dict = {
     "vla_benchmark": 20,
     "singlevla_benchmark": 20,
     "twinvla_benchmark": 20,
+    "handover_kirby": 20,
+    "libero_spatial_no_noops": 15,
     "singlevla_benchmark_5hz": 5
 }

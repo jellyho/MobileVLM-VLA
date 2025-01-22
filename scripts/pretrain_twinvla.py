@@ -92,7 +92,8 @@ batch_transform = RLDSBatchTransform(
     action_tokenizer=action_tokenizer,
     window_size=1,
     future_action_window_size=model_args.action_len - 1,
-    use_hz_input=model_args.use_hz_input
+    use_hz_input=model_args.use_hz_input,
+    use_multi_view=model_args.use_multi_view
 )
 
 dataset = RLDSDataset(
@@ -114,7 +115,8 @@ collator = PaddedCollatorForActionPrediction(
     padding_side='right',
     use_state_input=model_args.use_state_input,
     use_label=(model.config.head_args['head_type'] == 'BR'),
-    use_hz_input=model_args.use_hz_input
+    use_hz_input=model_args.use_hz_input,
+    use_multi_view=model_args.use_multi_view
 )
 
 dataloader = DataLoader(
@@ -220,6 +222,7 @@ with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
             loss = model.forward(
                 input_ids=batch['input_ids'].to(device_id),
                 images=batch['pixel_values'].to(device_id),
+                images_secondary=batch['pixel_values_secondary'].to(device_id) if model_args.use_multi_view else None,
                 attention_mask=batch['attention_mask'].to(device_id),
                 actions=batch['action'].to(device_id),
                 states=batch['proprio'].to(device_id) if model_args.use_state_input else None,
@@ -278,6 +281,7 @@ with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
                     predicted_action = model.module.predict_action(
                         input_ids=batch['input_ids'].to(device_id),
                         images=batch['pixel_values'].to(device_id),
+                        images_secondary=batch['pixel_values_secondary'].to(device_id) if model_args.use_multi_view else None,
                         attention_mask=batch['attention_mask'].to(device_id),
                         use_cache=True,
                         states=batch['proprio'].to(device_id) if model_args.use_state_input else None,

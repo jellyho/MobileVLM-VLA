@@ -139,11 +139,11 @@ class ModelArguments:
     use_hz_input: bool = field(default=False)
     state_dim: int = field(default=8)
     connection_interval: int = field(default=1) # 1 to 12?
+    use_multi_view: bool = field(default=False)
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     resume: bool = field(default=False)
-
     output_dir: str = field(default='checkpoints/SpatialVLA_highlr')
     data_root_dir: str = field(default='/home/shared/rlds_datasets')
     data_mix: str = field(default='libero_object_no_noops')

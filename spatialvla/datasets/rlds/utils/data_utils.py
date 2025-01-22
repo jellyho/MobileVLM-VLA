@@ -348,10 +348,13 @@ class PaddedCollatorForActionPrediction:
     use_state_input: bool = False
     use_label: bool = False
     use_hz_input: bool = False
+    use_multi_view: bool = False
 
     def __call__(self, instances: Sequence[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         input_ids = [instance['input_ids'] for instance in instances]
         pixel_values = [instance["pixel_values"] for instance in instances]
+        if self.use_multi_view:
+            pixel_values_secondary = [instance["pixel_values_secondary"] for instance in instances]
         if self.use_hz_input:
             hz_values = [instance['hz'] for instance in instances]
             hz_values = torch.tensor(hz_values).unsqueeze(-1)
@@ -390,6 +393,18 @@ class PaddedCollatorForActionPrediction:
         else:
             raise ValueError(f"Unsupported `pixel_values` type = {type(pixel_values)}")
 
+        if self.use_multi_view:
+            if isinstance(pixel_values_secondary[0], torch.Tensor):
+                pixel_values_secondary = torch.stack(pixel_values_secondary)
+            elif isinstance(pixel_values_secondary[0], dict):
+                pixel_values_secondary = {
+                    k: torch.stack([pixel_values_secondary[idx][k] for idx in range(len(input_ids))]) for k in pixel_values_secondary[0]
+                }
+            else:
+                raise ValueError(f"Unsupported `pixel_values` type = {type(pixel_values_secondary)}")
+        else:
+            pixel_values_secondary = None
+
         action = torch.stack([instance['action'] for instance in instances])
 
         if self.use_state_input:
@@ -398,6 +413,7 @@ class PaddedCollatorForActionPrediction:
 
         output = dict(
             pixel_values=pixel_values,
+            pixel_values_secondary=pixel_values_secondary,
             input_ids=input_ids,
             attention_mask=attention_mask,
             action=action,

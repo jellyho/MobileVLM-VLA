@@ -45,7 +45,7 @@ class RLDSBatchTransform:
     use_state_input: bool = False
     action_tokenizer: PreTrainedTokenizerBase = None
     use_hz_input: bool = False
-    use_multi_view = False
+    use_multi_view: bool = False
 
     def __call__(self, rlds_batch: Dict[str, Any]) -> Dict[str, Any]:
         """Converts a RLDS batch to the format expected by the OpenVLA collator/models."""
@@ -112,7 +112,7 @@ class RLDSBatchTransform:
 
         proprio = torch.Tensor(rlds_batch['observation']['proprio']) if self.use_state_input else None
 
-        return dict(pixel_values=new_img, secondary_pixel_values=new_secondary_img, input_ids=input_ids, labels=labels, action=action, proprio=proprio, dataset_name=dataset_name, img=img, hz=hz)
+        return dict(pixel_values=new_img, pixel_values_secondary=new_secondary_img, input_ids=input_ids, labels=labels, action=action, proprio=proprio, dataset_name=dataset_name, img=img, hz=hz)
 
 
 class RLDSDataset(IterableDataset):
