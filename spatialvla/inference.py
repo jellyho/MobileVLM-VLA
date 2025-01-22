@@ -4,7 +4,7 @@ import argparse
 from PIL import Image
 from pathlib import Path
 import numpy as np
-
+from torchvision import transforms
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
 
 from spatialvla.mobilevlm.model.mobilevlm import load_vla, load_pretrained_model
@@ -20,6 +20,12 @@ class VLAModel:
         self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_vla(model_path=model_path, dtype=dtype)
         # self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_twinvla_from_singlevla(single_model_path=model_path, dtype=dtype)
         self.dtype = dtype
+        crop_height = int(0.9 * 480)
+        crop_width = int(0.9 * 640)
+        self.transform = transforms.Compose([
+            transforms.CenterCrop((crop_height, crop_width)),  # Crop to 90%
+            transforms.Resize((480, 640))  # Resize back to 100%
+        ])
         # self.tokenizer, self.model, self.image_processor, _ = load_pretrained_model(model_path)
 
     def unnorm_action(self, unnorm_key, action):
@@ -66,6 +72,7 @@ class VLAModel:
         return f"{outputs.strip()}"
 
     def inference_action(self, unnorm_key, image, prompt, state=None, num_denoise_steps=None):
+        image = self.transform(image)
         images = [image]
         # Check whether this process_images is same as dataset
         images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=self.dtype)
