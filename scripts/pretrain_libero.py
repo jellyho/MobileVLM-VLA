@@ -54,19 +54,22 @@ if training_args.bf16:
     dtype = torch.bfloat16
 if training_args.fp16:
     dtype = torch.float16
-tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
-    model_args, 
-    load_8bit, 
-    load_4bit,
-    device=device_id,
-    dtype=dtype
-)
-# tokenizer, model, image_processor, _ = load_vla(
-#     'checkpoints/bridge_rt1',
-#     load_8bit=False, 
-#     load_4bit=False,
-#     device='cuda',
-# )
+if training_args.resume:
+    tokenizer, model, image_processor, _ = load_vla(
+        training_args.output_dir,
+        load_8bit=False, 
+        load_4bit=False,
+        device=device_id,
+        dtype=dtype
+    )
+else:
+    tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
+        model_args, 
+        load_8bit, 
+        load_4bit,
+        device=device_id,
+        dtype=dtype
+    )
 model.config.use_cache = False
 model = model.to(device_id)
 print('Pretrained VLM Loaded')
@@ -85,7 +88,8 @@ batch_transform = RLDSBatchTransform(
     use_state_input=model_args.use_state_input,
     action_tokenizer=action_tokenizer,
     window_size=1,
-    future_action_window_size=model_args.action_len - 1
+    future_action_window_size=model_args.action_len - 1,
+    use_hz_input=model_args.use_hz_input
 )
 
 dataset = RLDSDataset(
@@ -97,7 +101,8 @@ dataset = RLDSDataset(
     window_size=1,
     future_action_window_size=model_args.action_len - 1,
     enable_autotune=training_args.enable_autotune,
-    use_state_input=model_args.use_state_input
+    use_state_input=model_args.use_state_input,
+    num_parallel_calls=training_args.num_parallel_calls
 )
 
 collator = PaddedCollatorForActionPrediction(
@@ -105,7 +110,8 @@ collator = PaddedCollatorForActionPrediction(
     tokenizer.pad_token_id, 
     padding_side='right',
     use_state_input=model_args.use_state_input,
-    use_label=(model.config.head_args['head_type'] == 'BR')
+    use_label=(model.config.head_args['head_type'] == 'BR'),
+    use_hz_input=model_args.use_hz_input
 )
 
 dataloader = DataLoader(
@@ -149,14 +155,9 @@ if distributed_state.is_main_process:
 temp_dir = f'{training_args.output_dir}_tmp'
 print('Dataset Loaded')
 
-# Gradient Checkpointing
-if training_args.gradient_checkpointing: 
-    if hasattr(model, "enable_input_require_grads"):
-        model.enable_input_require_grads()
-    else:
-        def make_inputs_require_grad(module, input, output):
-            output.requires_grad_(True)
-        model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+if training_args.freeze_vision_backbone:
+    for param in model.model.vision_tower.parameters():
+        param.requires_grad = False
 
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
 decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
@@ -214,6 +215,17 @@ if distributed_state.is_main_process:
         config={**asdict(training_args), **asdict(model_args)}
     )
 
+if training_args.resume:
+    if os.path.exists(f'{training_args.output_dir}/training_states.pth'):
+        ckpt = torch.load(f'{training_args.output_dir}/training_states.pth', map_location="cpu")
+        optimizer.load_state_dict(ckpt['optim'])
+        scheduler.load_state_dict(ckpt['scheduler'])
+        step = ckpt['step']
+    else:
+        step = 0
+else:
+    step = 0
+
 ## Training LOOP!
 print('Training Start')
 with tqdm(total=training_args.max_steps, leave=False) as progress:
@@ -230,7 +242,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 attention_mask=batch['attention_mask'].to(device_id),
                 actions=batch['action'].to(device_id),
                 states=batch['proprio'] if model_args.use_state_input else None,
-                labels=batch['labels'] if model.module.config.head_args['head_type'] == 'BR' else None
+                labels=batch['labels'] if model.module.config.head_args['head_type'] == 'BR' else None,
+                hz=batch['hz'].to(device_id) if model_args.use_hz_input else None
             )
             if model.module.config.head_args['head_type'] == 'BR':
                 action_logits = loss.logits[:, -51:-1]
@@ -287,7 +300,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                         attention_mask=batch['attention_mask'].to(device_id),
                         use_cache=True,
                         states=batch['proprio'] if model_args.use_state_input else None,
-                        prior_actions=batch['action'].to(device_id)
+                        prior_actions=batch['action'].to(device_id),
+                        hz=batch['hz'].to(device_id) if model_args.use_hz_input else None,
                     )
                     prediction_time = float(time.time() - start) / training_args.batch_size
                 action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')
@@ -389,6 +403,13 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                 model.module.config.save_pretrained(training_args.output_dir)
                 model.module.save_pretrained(training_args.output_dir)
                 tokenizer.save_pretrained(training_args.output_dir)
+                other_states = {
+                    'step': gradient_step_idx,
+                    'optim': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict()
+                }
+                torch.save(other_states, f'{training_args.output_dir}/training_states.pth')
+                del other_states
                 if model.module.config.head_args['head_type'] == 'BR':
                     model.module.si.save_ema(training_args.output_dir)
 

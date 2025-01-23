@@ -22,10 +22,10 @@ class VLAModel:
         self.dtype = dtype
         crop_height = int(0.9 * 480)
         crop_width = int(0.9 * 640)
-        self.transform = transforms.Compose([
-            transforms.CenterCrop((crop_height, crop_width)),  # Crop to 90%
-            transforms.Resize((480, 640))  # Resize back to 100%
-        ])
+        # self.transform = transforms.Compose([
+        #     transforms.CenterCrop((crop_height, crop_width)),  # Crop to 90%
+        #     transforms.Resize((480, 640))  # Resize back to 100%
+        # ])
         # self.tokenizer, self.model, self.image_processor, _ = load_pretrained_model(model_path)
 
     def unnorm_action(self, unnorm_key, action):
@@ -71,8 +71,8 @@ class VLAModel:
             outputs = outputs[: -len(stop_str)]
         return f"{outputs.strip()}"
 
-    def inference_action(self, unnorm_key, image, prompt, state=None, num_denoise_steps=None):
-        image = self.transform(image)
+    def inference_action(self, unnorm_key, image, prompt, state=None, num_denoise_steps=None, hz=None):
+        # image = self.transform(image)
         images = [image]
         # Check whether this process_images is same as dataset
         images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=self.dtype)
@@ -90,7 +90,8 @@ class VLAModel:
                 action = self.model.predict_action_br(
                     input_ids=input_ids,
                     images=images_tensor,
-                    num_denoise_steps=5
+                    num_denoise_steps=5,
+                    hz=torch.Tensor(hz).unsqueeze(0)
                 )
         else:
             with torch.inference_mode():
@@ -98,7 +99,8 @@ class VLAModel:
                     input_ids=input_ids,
                     images=images_tensor,
                     use_cache=True,
-                    num_denoise_steps=num_denoise_steps
+                    num_denoise_steps=num_denoise_steps,
+                    hz=torch.tensor([hz]).unsqueeze(0).to(images_tensor.device) if hz is not None else None
                 )
         action = action.float().cpu().numpy()[0]
         action = self.unnorm_action(unnorm_key, action)

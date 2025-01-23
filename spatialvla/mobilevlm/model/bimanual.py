@@ -58,10 +58,10 @@ class TwinVLA(SpatialVLAForCausalLM):
     def get_model(self):
         if self.prepared:
             if self.tower_flag == 'left':
-                print('left')
+                # print('left')
                 return self.model_l
             else:
-                print('right')
+                # print('right')
                 return self.model_r
         else:
             return self.model
@@ -75,10 +75,10 @@ class TwinVLA(SpatialVLAForCausalLM):
     def encode_images(self, images):
         image_features = self.vision_tower(images)
         if self.tower_flag == 'left':
-            print('left, encode')
+            # print('left, encode')
             image_features = self.model_l.mm_projector(image_features).contiguous()
         elif self.tower_flag == 'right':
-            print('right, encode')
+            # print('right, encode')
             image_features = self.model_r.mm_projector(image_features).contiguous()
 
         return image_features
@@ -160,7 +160,7 @@ class TwinVLA(SpatialVLAForCausalLM):
             additional_modality
         )
 
-        print('inputs_lr is ready')
+        # print('inputs_lr is ready')
 
         # pos_ids and attn_mask caluation only once ###
         batch_size, seq_length, _ = inputs_lr[0][3].shape

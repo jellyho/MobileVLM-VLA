@@ -178,7 +178,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
                     # Query model to get action
                     if action_counter == 0:
-                        action_chunk = model.inference_action(f'{cfg.task_name}_no_noops', Image.fromarray(img), task_description)
+                        action_chunk = model.inference_action(f'{cfg.task_name}_no_noops', Image.fromarray(img), task_description, hz=15)
                     
                     # Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
                     action = action_chunk[action_counter]

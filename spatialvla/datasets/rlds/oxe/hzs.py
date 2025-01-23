@@ -71,5 +71,8 @@ hz_dict = {
     "twinvla_benchmark": 20,
     "handover_kirby": 20,
     "libero_spatial_no_noops": 15,
+    "libero_object_no_noops": 15,
+    "libero_goal_no_noops": 15,
+    "libero_10_no_noops": 15,
     "singlevla_benchmark_5hz": 5
 }
