@@ -191,7 +191,7 @@ class TwinVLAModel:
                     images_secondary=secondary_images_tensor,
                     use_cache=True,
                     output_attn=output_attn,
-                    hz=hz
+                    hz=torch.tensor([hz]).unsqueeze(0).to(images_tensor.device) if hz is not None else None
                 )
         if output_attn:
             attn = action[1]
