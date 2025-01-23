@@ -174,13 +174,12 @@ class TwinVLA(SpatialVLAForCausalLM):
             past_key_values_length, seq_length + past_key_values_length, dtype=torch.long, device=device
         )
         position_ids = position_ids.unsqueeze(0).view(-1, seq_length)
-
-        if inputs_lr[0][1] is None:
-            attention_mask = torch.ones(
+        indep_atm = inputs_lr[0][1]
+        if indep_atm is None:
+            indep_atm = torch.ones(
                 (batch_size, seq_length_with_past), dtype=torch.bool, device=device
             )
-
-        indep_atm = inputs_lr[0][1]
+                  
         joint_atm = indep_atm.clone()
 
         seq_len = indep_atm.shape[1]
