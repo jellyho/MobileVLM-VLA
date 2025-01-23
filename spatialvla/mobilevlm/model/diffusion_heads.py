@@ -10,6 +10,8 @@ from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 from diffusers.schedulers.scheduling_dpmsolver_multistep import DPMSolverMultistepScheduler
 import math
+from spatialvla.mobilevlm.utils import FocalL2Loss
+
 
 ############## Pytorch Version of Octo Diffusion Head #################
 class FourierFeatures(nn.Module):
@@ -415,7 +417,7 @@ class FlowMatchingActionHead(nn.Module):
         return pred_eps
 
     # No window size
-    def loss(self, embeddings, actions, attention_mask=None):
+    def loss(self, embeddings, actions, attention_mask=None, focal_loss=False):
         # size of embeddings will be [Batch, length, embedding_size]
         # In case of it is right padded
         if attention_mask is not None:
@@ -448,6 +450,8 @@ class FlowMatchingActionHead(nn.Module):
 
         d_psi = actions - (1 - self.flow_sig_min) * noise
         loss = F.mse_loss(pred_eps, d_psi, reduction="none")
+        if focal_loss:
+            loss[:, :, -1] = 16.0 * loss[:, :, -1]
         loss = loss.mean()
         return loss
 

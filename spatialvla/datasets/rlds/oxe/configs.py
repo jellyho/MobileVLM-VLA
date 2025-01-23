@@ -87,6 +87,7 @@ OXE_DATASET_CONFIGS = {
     'singlevla_benchmark_5hz': singlevla_benchmark_config,
     'singlevla_benchmark': singlevla_benchmark_config,
     'twinvla_benchmark': twinvla_benchmark_config,
+    'twinvla_benchmark_5hz': twinvla_benchmark_config,
     'handover_kirby': twinvla_benchmark_config,
     'transfer_cup': vla_benchmark_bimanual_config,
     'transfer_tissue': vla_benchmark_bimanual_config,

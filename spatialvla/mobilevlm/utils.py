@@ -17,6 +17,17 @@ moderation_msg = "YOUR INPUT VIOLATES OUR CONTENT MODERATION GUIDELINES. PLEASE 
 
 handler = None
 
+def FocalL2Loss(y_pred, y_true):
+    alpha, beta, gamma = 0.1, 0.01, 2.0
+    error = y_true - y_pred
+    mse = error ** 2
+
+    # Focal weighting term
+    focal_weight = (1 - torch.exp(-beta * mse)) ** gamma
+
+    # Weighted loss
+    loss = alpha * focal_weight * mse
+    return loss.mean()        
 
 def load_image_from_base64(image):
     return Image.open(BytesIO(base64.b64decode(image)))

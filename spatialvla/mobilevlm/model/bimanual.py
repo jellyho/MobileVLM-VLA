@@ -350,7 +350,7 @@ class TwinVLA(SpatialVLAForCausalLM):
 
             # Action decoding
             if self.config.head_args['head_type'] in ['Diffusion', 'FlowMatching', 'DiffusionPolicy2', 'FlowMatchingDiffusionPolicy']:
-                loss += self.action_head.loss(action_hidden, actions[:, :, idx*self.config.action_dim:(idx+1)*self.config.action_dim], attention_mask=inputs_lr[idx][1])
+                loss += self.action_head.loss(action_hidden, actions[:, :, idx*self.config.action_dim:(idx+1)*self.config.action_dim], attention_mask=inputs_lr[idx][1], focal_loss=True)
             elif self.config.head_args['head_type'] == 'DiffusionPolicy':
                 loss += self.action_head.loss(action_hidden, actions[:, :, idx*self.config.action_dim:(idx+1)*self.config.action_dim])
             else: #MLP, MAP
