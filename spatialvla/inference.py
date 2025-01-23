@@ -188,7 +188,7 @@ class TwinVLAModel:
                 action = self.model.predict_action(
                     input_ids=input_ids,
                     images=images_tensor,
-                    secondary_image=secondary_images_tensor,
+                    images_secondary=secondary_images_tensor,
                     use_cache=True,
                     output_attn=output_attn,
                     hz=hz
