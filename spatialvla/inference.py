@@ -157,10 +157,16 @@ class TwinVLAModel:
             outputs = outputs[: -len(stop_str)]
         return f"{outputs.strip()}"
 
-    def inference_action(self, unnorm_key, image, prompt, state=None, output_attn=False):
+    def inference_action(self, unnorm_key, image, prompt, secondary_image=None, state=None, output_attn=False, hz=None):
         images = [image]
         # Check whether this process_images is same as dataset
         images_tensor = process_images(images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=self.dtype)
+        if secondary_image is not None:
+            secondary_images = [secondary_image]
+            # Check whether this process_images is same as dataset
+            secondary_images_tensor = process_images(secondary_images, self.image_processor, {'image_aspect_ratio' : 'pad'}).to(self.model.device, dtype=self.dtype)            
+        else:
+            secondary_images_tensor = None
         prompt = f'What action should the robot take to {prompt}?'
         conv = conv_templates['v1'].copy() # Hard-coded
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
@@ -182,8 +188,10 @@ class TwinVLAModel:
                 action = self.model.predict_action(
                     input_ids=input_ids,
                     images=images_tensor,
+                    secondary_image=secondary_images_tensor,
                     use_cache=True,
-                    output_attn=output_attn
+                    output_attn=output_attn,
+                    hz=hz
                 )
         if output_attn:
             attn = action[1]

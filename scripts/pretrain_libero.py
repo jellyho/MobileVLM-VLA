@@ -358,7 +358,8 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                                     action = model.module.predict_action(
                                         input_ids=input_ids,
                                         images=images_tensor,
-                                        use_cache=True
+                                        use_cache=True,
+                                        hz=batch['hz'].to(device_id) if model_args.use_hz_input else None,
                                     )
                         action = action.cpu().numpy()[0]
                         unnorm_key = 'libero_10_no_noops'
