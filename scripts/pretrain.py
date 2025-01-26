@@ -8,7 +8,7 @@ import time
 import numpy as np
 from tqdm import tqdm
 import transformers
-from transformers import get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
+from transformers import get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup, SchedulerType
 from transformers.trainer import ALL_LAYERNORM_LAYERS, get_parameter_names
 from accelerate import PartialState
 from dataclasses import  asdict
@@ -198,7 +198,9 @@ if training_args.resume:
     if os.path.exists(f'{training_args.output_dir}/training_states.pth'):
         ckpt = torch.load(f'{training_args.output_dir}/training_states.pth', map_location="cpu")
         optimizer.load_state_dict(ckpt['optim'])
-        scheduler.load_state_dict(ckpt['scheduler'])
+        print(training_args.lr_scheduler_type)
+        if 'scheduler' in ckpt.keys() and training_args.lr_scheduler_type != SchedulerType.CONSTANT:
+            scheduler.load_state_dict(ckpt['scheduler'])
         step = ckpt['step']
     else:
         step = 0
@@ -246,7 +248,7 @@ with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
         if (batch_idx + 1) % training_args.gradient_accumulation_steps == 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=training_args.max_grad_norm)
             optimizer.step()
-            if training_args.lr_scheduler_type != 'constant':
+            if training_args.lr_scheduler_type != SchedulerType.CONSTANT:
                 scheduler.step()
             if model.module.config.head_args['head_type'] == 'BR':
                 model.module.si.ema.update()
@@ -309,7 +311,7 @@ with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
                 other_states = {
                     'step': gradient_step_idx,
                     'optim': optimizer.state_dict(),
-                    'scheduler': scheduler.state_dict()
+                    'scheduler': scheduler.state_dict() if training_args.lr_scheduler_type != SchedulerType.CONSTANT else torch.zeros(1)
                 }
                 torch.save(other_states, f'{training_args.output_dir}/training_states.pth')
                 del other_states
