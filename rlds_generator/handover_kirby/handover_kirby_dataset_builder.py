@@ -129,7 +129,7 @@ class HandoverKriby(tfds.core.GeneratorBasedBuilder):
             shift = 20 // hz
 
             delta_ee_right = delta_ee_right[shift:, :6] - delta_ee_right[:-shift, :6]
-            grp_right = ee_pos[shift:, 6]
+            grp_right = ee_pos[shift:, -1]
 
             delta_ee_left = delta_ee_left[shift:, :6] - delta_ee_left[:-shift, :6]
             grp_left = ee_pos[shift:, 6]

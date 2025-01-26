@@ -114,7 +114,7 @@ class TwinvlaBenchmark5hz(tfds.core.GeneratorBasedBuilder):
             shift = 20 // hz
 
             delta_ee_right = delta_ee_right[shift:, :6] - delta_ee_right[:-shift, :6]
-            grp_right = ee_pos[shift:, 6]
+            grp_right = ee_pos[shift:, -1]
 
             delta_ee_left = delta_ee_left[shift:, :6] - delta_ee_left[:-shift, :6]
             grp_left = ee_pos[shift:, 6]
@@ -154,7 +154,7 @@ class TwinvlaBenchmark5hz(tfds.core.GeneratorBasedBuilder):
         # create list of all examples
         episode_paths = glob.glob(path)
 
-        # for smallish datasets, use single-thread parsing
+        # # for smallish datasets, use single-thread parsing
         for sample in episode_paths:
             print(sample)
             yield _parse_example(sample)

@@ -34,7 +34,7 @@ from PIL import Image
 
 tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to gpu
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["WANDB_MODE"] = "online"
+os.environ["WANDB_MODE"] = "offline"
 
 distributed_state = PartialState()
 device_id = distributed_state.local_process_index

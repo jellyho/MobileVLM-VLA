@@ -254,7 +254,7 @@ class TwinVLA(SpatialVLAForCausalLM):
                 head_dim = attn.head_dim
                 hidden_size = attn.hidden_size
 
-            if layer_idx % connection_interval == 0:
+            if layer_idx % connection_interval == 0 and connection_interval < 24:
                 # joint eager_attention_forward
                 new_q_states = torch.cat(q_states, axis=-2)
                 new_k_states = torch.cat(k_states, axis=-2)
@@ -283,7 +283,7 @@ class TwinVLA(SpatialVLAForCausalLM):
             for idx, model in enumerate(models):
                 hidden_statess[idx] = self.attn(model, layer_idx).o_proj(attn_outputs[idx]) + residuals[idx]
 
-            if output_attentions:
+            if output_attentions and connection_interval < 24:
                 all_self_attns += (attn_weights, )
             ## attn finish
 
@@ -469,7 +469,10 @@ def load_twinvla_from_singlevla(single_model_path, model_args, load_8bit=False, 
 
     if model.action_head:
         model.action_head.to(device=device)
-    dataset_statistics = load_statistics_from_json(single_model_path)
+    try:
+        dataset_statistics = load_statistics_from_json(single_model_path)
+    except:
+        print('Data Statistics Not Found.')
 
     image_processor = vision_tower.image_processor
 
