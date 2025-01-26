@@ -451,7 +451,8 @@ class FlowMatchingActionHead(nn.Module):
         d_psi = actions - (1 - self.flow_sig_min) * noise
         loss = F.mse_loss(pred_eps, d_psi, reduction="none")
         if focal_loss:
-            loss[:, :, -1] = 16.0 * loss[:, :, -1]
+            # pass
+            loss[:, :, -1] =  loss[:, :, -1]
         loss = loss.mean()
         return loss
 
