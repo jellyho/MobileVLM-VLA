@@ -75,5 +75,6 @@ hz_dict = {
     "libero_goal_no_noops": 15,
     "libero_10_no_noops": 15,
     "singlevla_benchmark_5hz": 5,
-    "twinvla_benchmark_5hz": 5
+    "twinvla_benchmark_5hz": 5,
+    "tabletop_bimanual": 15,
 }

@@ -2,10 +2,10 @@ import torch
 from transformers import Trainer
 from typing import List, Optional
 from torch.utils.data import Sampler
-from transformers.trainer import (ALL_LAYERNORM_LAYERS, ShardedDDPOption,
-                                  get_parameter_names, has_length,
+from transformers.trainer import (ALL_LAYERNORM_LAYERS, get_parameter_names, has_length,
                                   is_sagemaker_mp_enabled, logger)
 from transformers.utils import is_sagemaker_mp_enabled, is_apex_available
+# ShardedDDPOption,
 if is_sagemaker_mp_enabled():
     from transformers.trainer_pt_utils import smp_forward_backward
 if is_apex_available():

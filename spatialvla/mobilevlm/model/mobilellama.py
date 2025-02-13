@@ -152,7 +152,10 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                 self.si = StochasticInterpolants(model_args)
                 self.si.load_model(model_args, device='cuda')
                 self.action_head = False
+            else:
+                self.action_head = False
         else:
+            print('no need for action head')
             self.action_head = False
         
     def get_model(self):
@@ -257,6 +260,28 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                 )
             else:
                 return CausalLMOutputWithPast(
+                    loss=loss,
+                    logits=logits,
+                    past_key_values=outputs.past_key_values,
+                    hidden_states=outputs.hidden_states,
+                    attentions=outputs.attentions,
+                )
+        elif self.config.head_args['head_type'] == 'FAST':
+            logits = self.lm_head(hidden)
+            if labels is not None:
+                shift_logits = logits[..., :-1, :].contiguous()
+                shift_labels = labels[..., 1:].contiguous()
+                # print(shift_logits.shape, shift_labels.shape)
+                # Flatten the tokens
+                loss_fct = CrossEntropyLoss(ignore_index=IGNORE_INDEX)
+                shift_logits = shift_logits.view(-1, self.config.vocab_size)
+                shift_labels = shift_labels.view(-1)
+                # Enable model/pipeline parallelism
+                shift_labels = shift_labels.to(shift_logits.device)
+                loss = loss_fct(shift_logits, shift_labels)
+            else:
+                loss = None  
+            return CausalLMOutputWithPast(
                     loss=loss,
                     logits=logits,
                     past_key_values=outputs.past_key_values,
@@ -422,6 +447,31 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             )
             # model_actions = self.si.sample(x_prior=prior_action.to(dtype=torch.bfloat16), cond=condition.float().flatten(1), diffuse_step=5)
         return model_actions
+
+    def predict_action_fast(self, 
+        input_ids: torch.LongTensor = None,
+        images: Optional[torch.FloatTensor] = None,
+        states: Optional[torch.Tensor] = None,
+        hzs = None,
+        action_dim = None
+    ):
+        # GENERATE Actions with hidden state return, take -1 index hidden state
+        with torch.autocast('cuda', dtype=torch.bfloat16):
+            # 1, length
+            input_length = input_ids.shape[1]
+            output_ids = self.generate(
+                input_ids,
+                images=images,
+                max_new_tokens=512,
+                use_cache=True,
+                do_sample=False,
+                num_beams=1,
+                top_p=None,                
+            )
+            
+            action_token = output_ids[:, input_length:].cpu()
+            actions = torch.tensor(self.action_tokenizer.detokenize(action_token, hzs, action_dim), device=input_ids.device)
+        return actions
 
     def prepare_inputs_for_generation(
         self, input_ids, past_key_values=None, attention_mask=None, inputs_embeds=None, **kwargs

@@ -97,6 +97,12 @@ DiT = {
     'sched':'DDIM'
 }
 
+FAST = {
+    'head_type' : 'FAST',
+    'hidden_projection': 'pass', # Always pass
+    'use_map' : False,
+}
+
 BR = {
     'head_type':'BR',
     'hidden_projection': 'pass', # Always pass
@@ -124,7 +130,8 @@ HEAD_ARGS = {
     'FlowMatchingDiffusionPolicy': FlowMatchingDiffusionPolicyHead,
     'DiT': DiT,
     'BR': BR,
-    'FlowMatching' : FlowMatchingHead
+    'FlowMatching' : FlowMatchingHead,
+    'FAST' : FAST
 }
 
 @dataclass

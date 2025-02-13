@@ -6,16 +6,15 @@ import os
 import imageio
 import numpy as np
 import tensorflow as tf
-from libero.libero import get_libero_path
-from libero.libero.envs import OffScreenRenderEnv
 
 from spatialvla.simulation.robot_utils import (
     DATE,
     DATE_TIME,
 )
 
-
 def get_libero_env(task, model_family, resolution=256):
+    from libero.libero import get_libero_path
+    from libero.libero.envs import OffScreenRenderEnv
     """Initializes and returns the LIBERO environment, along with the task description."""
     task_description = task.language
     task_bddl_file = os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)
@@ -58,9 +57,12 @@ def get_libero_image(obs, resize_size):
     return img
 
 
-def save_rollout_video(rollout_images, idx, success, task_description, log_file=None):
+def save_rollout_video(rollout_images, idx, success, task_description, log_file=None, folder=None):
     """Saves an MP4 replay of an episode."""
-    rollout_dir = f"./rollouts/{DATE}"
+    if folder is None:
+        rollout_dir = f"./rollouts/{DATE}"
+    else:
+        rollout_dir = f"./rollouts/{DATE}/{folder}/videos"
     os.makedirs(rollout_dir, exist_ok=True)
     processed_task_description = task_description.lower().replace(" ", "_").replace("\n", "_").replace(".", "_")[:50]
     mp4_path = f"{rollout_dir}/{DATE_TIME}--episode={idx}--success={success}--task={processed_task_description}.mp4"

@@ -73,6 +73,14 @@ twinvla_benchmark_config = {
     "action_encoding": ActionEncoding.JOINT_POS_BIMANUAL,
 }
 
+tabletop_sim_config = {
+    "image_obs_keys": {"primary": "rightview_image", "secondary": 'leftview_image', "wrist": None},
+    "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+    "state_obs_keys": ["joint_pos"],
+    "state_encoding": StateEncoding.JOINT_BIMANUAL,
+    "action_encoding": ActionEncoding.JOINT_POS_BIMANUAL,
+}
+
 vla_benchmark_bimanual_config = {
     "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
     "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
@@ -83,6 +91,7 @@ vla_benchmark_bimanual_config = {
 
 # === Individual Dataset Configs ===
 OXE_DATASET_CONFIGS = {
+    'tabletop_bimanual': tabletop_sim_config,
     'singlevla_benchmark_ee': singlevla_benchmark_config,
     'singlevla_benchmark_5hz': singlevla_benchmark_config,
     'singlevla_benchmark': singlevla_benchmark_config,

@@ -11,7 +11,7 @@ from typing import List, Union
 import numpy as np
 from transformers import PreTrainedTokenizerBase
 import scipy.stats as stats
-
+from transformers import AutoProcessor
 
 class ActionTokenizer:
     def __init__(
@@ -69,3 +69,24 @@ class ActionTokenizer:
         return self.n_bins
 
     
+class FASTTokenizer:
+    def __init__(
+        self, tokenizer: PreTrainedTokenizerBase, action_dim = 32,
+    ) -> None:
+        # Instantiate FAST tokenizer
+        self.fast_tokenizer = AutoProcessor.from_pretrained("physical-intelligence/fast", trust_remote_code=True)
+        self.tokenizer = tokenizer
+
+    def discretize(self, action: np.ndarray) -> Union[str, List[str]]:
+        """Clip & bin actions to *the last `n_bins` tokens* of the vocabulary (e.g., tokenizer.vocab[-256:])."""
+        action_tokens = self.fast_tokenizer(action[None])[0]
+        action_tokens = self.tokenizer.vocab_size - 1 - np.array(action_tokens)
+        return action_tokens
+
+    def detokenize(self, tokens, action_dim, action_len):
+        action_tokens = self.tokenizer.vocab_size - 1 - tokens
+        action = self.fast_tokenizer.decode([action_tokens], time_horizon=action_len, action_dim=action_dim)[0]
+
+    @property
+    def vocab_size(self) -> int:
+        return 

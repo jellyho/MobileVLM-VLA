@@ -86,7 +86,7 @@ def normalize_action_and_proprio(traj: Dict, metadata: Dict, normalization_type:
                 match=lambda k, _: k == traj_key,
                 map_fn=lambda x: tf.where(
                     mask,
-                    tf.clip_by_value(2 * (x - low) / (high - low + 1e-8) - 1, -1, 1),
+                    tf.clip_by_value(2 * (x - low) / (high - low + 1e-6) - 1, -1, 1),
                     x,
                 ),
             )

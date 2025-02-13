@@ -89,26 +89,29 @@ class RLDSBatchTransform:
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + "\n" + prompt)
         conv.append_message(conv.roles[1], None)
         # if self.action_tokenizer is not None:
-        #     conv.append_message(conv.roles[1], self.action_tokenizer(action))
+            # conv.append_message(conv.roles[1], self.action_tokenizer(action))
         # else:
-        #     conv.append_message(conv.roles[1], None)
+            # conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
         #
         # Tokenize (w/ `base_tokenizer`)
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"))
             
-        if self.action_tokenizer is not None:
-            input_ids = torch.cat([input_ids, torch.Tensor(self.action_tokenizer.discretize(action)).to(dtype=torch.long)], axis=0)
-            labels = list(input_ids)
-            labels = torch.tensor(labels)
-            labels[: -(self.window_size + self.future_action_window_size)] = IGNORE_INDEX
-        else:
-            labels = None
-
         if self.use_hz_input:
             hz = hz_dict[dataset_name.decode()]
         else:
             hz = None
+
+        if self.action_tokenizer is not None:
+            action_tokens = torch.Tensor(self.action_tokenizer.discretize(action[:hz, :])).to(dtype=torch.long)
+            # print(action_tokens)
+            token_length = action_tokens.shape[-1]
+            input_ids = torch.cat([input_ids, action_tokens], axis=0)
+            labels = list(input_ids)
+            labels = torch.tensor(labels)
+            labels[: -token_length] = IGNORE_INDEX
+        else:
+            labels = None        
 
         proprio = torch.Tensor(rlds_batch['observation']['proprio']) if self.use_state_input else None
 
@@ -129,7 +132,8 @@ class RLDSDataset(IterableDataset):
         window_size = 1,
         future_action_window_size=0,
         enable_autotune=False,
-        num_parallel_calls=16
+        num_parallel_calls=16,
+        quantile_norm=False
     ) -> None:
         """Lightweight wrapper around RLDS TFDS Pipeline for use with PyTorch/OpenVLA Data Loaders."""
         self.data_root_dir, self.data_mix, self.batch_transform = data_root_dir, data_mix, batch_transform
@@ -150,7 +154,7 @@ class RLDSDataset(IterableDataset):
             load_depth=False,
             load_proprio=use_state_input,
             load_language=True,
-            action_proprio_normalization_type=NormalizationType.NORMAL,
+            action_proprio_normalization_type=NormalizationType.NORMAL if not quantile_norm else NormalizationType.BOUNDS_Q99,
         )
         rlds_config = dict(
             traj_transform_kwargs=dict(

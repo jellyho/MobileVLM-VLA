@@ -5,6 +5,7 @@ import torch.nn as nn
 import wandb
 import os
 import time
+import numpy as np
 from tqdm import tqdm
 import transformers
 from transformers import get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
@@ -21,11 +22,17 @@ from spatialvla.datasets import RLDSDataset, RLDSBatchTransform
 from spatialvla.datasets.rlds.utils.data_utils import save_dataset_statistics
 from spatialvla.datasets.rlds.utils.data_utils import PaddedCollatorForActionPrediction
 
-from spatialvla.mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla
+from spatialvla.mobilevlm.model.bimanual import load_twinvla_from_singlevla, load_twinvla
+from spatialvla.mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla, load_vla
 from spatialvla.mobilevlm.train.train import find_all_linear_names, get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3
-from spatialvla_config import ModelArguments, TrainingArguments, HEAD_ARGS
-from mergelora import merge_lora
+from twinvla_config import ModelArguments, TrainingArguments, HEAD_ARGS
+from mergelora import merge_lora_twinvla
 from spatialvla.mobilevlm.action_tokenizer import ActionTokenizer
+from spatialvla.mobilevlm.conversation import conv_templates, SeparatorStyle
+from spatialvla.mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
+from spatialvla.mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
+from PIL import Image
+
 
 tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to gpu
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -35,12 +42,6 @@ distributed_state = PartialState()
 device_id = distributed_state.local_process_index
 torch.cuda.set_device(device_id)
 torch.cuda.empty_cache()
-
-local_rank = None
-
-def rank0_print(*args):
-    if local_rank == 0:
-        print(*args)
 
 ## Argument parsing
 parser = transformers.HfArgumentParser((ModelArguments, TrainingArguments))
@@ -54,17 +55,28 @@ if training_args.bf16:
     dtype = torch.bfloat16
 if training_args.fp16:
     dtype = torch.float16
-
-tokenizer, model, image_processor, _ = load_pretrained_vlm_for_vla(
-    model_args, 
-    load_8bit, 
-    load_4bit,
-    device=device_id,
-    dtype=dtype
-)
+    
+if training_args.resume:
+    tokenizer, model, image_processor, _ = load_twinvla(
+        training_args.output_dir,
+        load_8bit=False,
+        load_4bit=False,
+        device=device_id,
+        dtype=dtype
+    )
+else:
+    tokenizer, model, image_processor, _ = load_twinvla_from_singlevla(
+        model_args.single_model_path, 
+        model_args,
+        load_8bit, 
+        load_4bit,
+        device=device_id,
+        dtype=dtype
+    )
 model.config.use_cache = False
 model = model.to(device_id)
-print('Pretrained VLM Loaded')
+print('Pretrained SingleVLA Loaded')
+print('interval', model.config.connection_interval)
 
 ## Important!
 if model.config.head_args['head_type'] == 'BR':
@@ -73,15 +85,17 @@ if model.config.head_args['head_type'] == 'BR':
 else:
     action_tokenizer = None
 
+
 batch_transform = RLDSBatchTransform(
     tokenizer,
     image_processor,
     use_state_input=model_args.use_state_input,
     action_tokenizer=action_tokenizer,
     window_size=1,
-    future_action_window_size=model_args.action_len - 1
+    future_action_window_size=model_args.action_len - 1,
+    use_hz_input=model_args.use_hz_input,
+    use_multi_view=model_args.use_multi_view
 )
-
 
 dataset = RLDSDataset(
     data_root_dir=training_args.data_root_dir,
@@ -92,19 +106,19 @@ dataset = RLDSDataset(
     window_size=1,
     future_action_window_size=model_args.action_len - 1,
     enable_autotune=training_args.enable_autotune,
-    use_state_input=model_args.use_state_input
+    use_state_input=model_args.use_state_input,
+    num_parallel_calls=training_args.num_parallel_calls
 )
-
-# sampler = DistributedSampler(dataset)
 
 collator = PaddedCollatorForActionPrediction(
     tokenizer.model_max_length, 
     tokenizer.pad_token_id, 
     padding_side='right',
     use_state_input=model_args.use_state_input,
-    use_label=(model.config.head_args['head_type'] == 'BR')
+    use_label=(model.config.head_args['head_type'] == 'BR'),
+    use_hz_input=model_args.use_hz_input,
+    use_multi_view=model_args.use_multi_view
 )
-
 
 dataloader = DataLoader(
     dataset,
@@ -113,7 +127,7 @@ dataloader = DataLoader(
     collate_fn=collator,
     num_workers=0,  # Important =>> Set to 0 if using RLDS; TFDS rolls its own parallelism!
 )
-# Save statistics to a JSON file
+
 # Save statistics to a JSON file
 if not os.path.exists(training_args.output_dir):
     try:
@@ -125,24 +139,10 @@ if distributed_state.is_main_process:
 temp_dir = f'{training_args.output_dir}_tmp'
 print('Dataset Loaded')
 
-# Quantization
-if training_args.bits in [4, 8]: 
-    from peft import prepare_model_for_kbit_training
-    model.config.torch_dtype=(torch.float32 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
+if training_args.freeze_vision_backbone:
+    for param in model.model.vision_tower.parameters():
+        param.requires_grad = False
 
-# Gradient Checkpointing
-if training_args.gradient_checkpointing: 
-    if hasattr(model, "enable_input_require_grads"):
-        model.enable_input_require_grads()
-    else:
-        def make_inputs_require_grad(module, input, output):
-            output.requires_grad_(True)
-        model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-
-## LORA SETTING
-print(model)
-print(find_all_linear_names(model))
 if training_args.lora_enable:
     from peft import LoraConfig, get_peft_model
     lora_config = LoraConfig(
@@ -162,29 +162,14 @@ if training_args.lora_enable:
     print("Adding LoRA adapters...")
     model = get_peft_model(model, lora_config)
 
-print(model)
 
-# Quantization LoRA
-if training_args.bits in [4, 8]:
-    model.get_model().mm_projector.to(dtype=compute_dtype, device=training_args.device)
-    from peft.tuners.lora import LoraLayer
-    for name, module in model.named_modules():
-        if isinstance(module, LoraLayer):
-            if training_args.bf16:
-                module = module.to(torch.bfloat16)
-        if 'norm' in name:
-            module = module.to(torch.float32)
-        if 'lm_head' in name or 'embed_tokens' in name or 'action_head' in name or 'action_hidden_size' in name:
-            if hasattr(module, 'weight'):
-                if training_args.bf16 and module.weight.dtype == torch.float32:
-                    module = module.to(torch.bfloat16)
-
-for p in model.get_model().mm_projector.parameters():
+for p in model.model_l.mm_projector.parameters():
+    p.requires_grad = True
+for p in model.model_r.mm_projector.parameters():
     p.requires_grad = True
 for p in model.action_head.parameters():
     p.requires_grad = True
 model.print_trainable_parameters()
-print('LoRA Loaded')
 
 model = DDP(model, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
 decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
@@ -242,9 +227,20 @@ if distributed_state.is_main_process:
         config={**asdict(training_args), **asdict(model_args)}
     )
 
+if training_args.resume:
+    if os.path.exists(f'{training_args.output_dir}/training_states.pth'):
+        ckpt = torch.load(f'{training_args.output_dir}/training_states.pth', map_location="cpu")
+        optimizer.load_state_dict(ckpt['optim'])
+        scheduler.load_state_dict(ckpt['scheduler'])
+        step = ckpt['step']
+    else:
+        step = 0
+else:
+    step = 0
+
 ## Training LOOP!
 print('Training Start')
-with tqdm(total=training_args.max_steps, leave=False) as progress:
+with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
     model.train()
     optimizer.zero_grad()
     for batch_idx, batch in enumerate(dataloader):
@@ -255,11 +251,27 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
             loss = model.forward(
                 input_ids=batch['input_ids'].to(device_id),
                 images=batch['pixel_values'].to(device_id),
+                images_secondary=batch['pixel_values_secondary'].to(device_id) if model_args.use_multi_view else None,
                 attention_mask=batch['attention_mask'].to(device_id),
                 actions=batch['action'].to(device_id),
-                states=batch['proprio'] if model_args.use_state_input else None,
-                labels=batch['labels'] if model.module.config.head_args['head_type'] == 'BR' else None
+                states=batch['proprio'].to(device_id) if model_args.use_state_input else None,
+                labels=batch['labels'] if model.module.config.head_args['head_type'] == 'BR' else None,
+                hz=batch['hz'].to(device_id) if model_args.use_hz_input else None
             )
+            if model.module.config.head_args['head_type'] == 'BR':
+                action_logits = loss.logits[:, -51:-1]
+                action_preds = action_logits.argmax(dim=2)
+                action_gt = batch['labels'][:, -50:].to(action_logits.device)
+                mask = action_gt > action_tokenizer.action_token_begin_idx
+                correct_preds = (action_preds == action_gt) & mask
+                action_accuracy = correct_preds.sum().float() / mask.sum().float()
+                eps_loss = loss.loss[5]
+                ce_loss = loss.loss[1]
+                v_loss = loss.loss[2]
+                s_loss = loss.loss[3]
+                b_loss = loss.loss[4]
+                loss = loss.loss[0]
+
         normalized_loss = loss / training_args.gradient_accumulation_steps
         normalized_loss.backward()
         gradient_step_idx = batch_idx // training_args.gradient_accumulation_steps
@@ -269,7 +281,9 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=training_args.max_grad_norm)
             optimizer.step()
             if training_args.lr_scheduler_type != 'constant':
-                scheduler.step() 
+                scheduler.step()
+            if model.module.config.head_args['head_type'] == 'BR':
+                model.module.si.ema.update()
             progress.update()
 
         ## Logging        
@@ -296,18 +310,27 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
                     predicted_action = model.module.predict_action(
                         input_ids=batch['input_ids'].to(device_id),
                         images=batch['pixel_values'].to(device_id),
+                        images_secondary=batch['pixel_values_secondary'].to(device_id) if model_args.use_multi_view else None,
                         attention_mask=batch['attention_mask'].to(device_id),
                         use_cache=True,
-                        states=batch['proprio'] if model_args.use_state_input else None,
-                        prior_actions=batch['action'].to(device_id)
+                        states=batch['proprio'].to(device_id) if model_args.use_state_input else None,
+                        prior_actions=batch['action'].to(device_id),
+                        hz=batch['hz'].to(device_id) if model_args.use_hz_input else None,
                     )
-                    prediction_time = float(time.time() - start)
+                    prediction_time = float(time.time() - start) / training_args.batch_size
                 action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')
                 log_dict['action_loss'] = action_loss.item()
                 log_dict['pred_time'] = prediction_time
 
         if distributed_state.is_main_process:
             log_dict['loss'] = normalized_loss.item()
+            if model.module.config.head_args['head_type'] == 'BR':
+                log_dict['token acc'] = action_accuracy
+                log_dict['eps_loss'] = eps_loss.detach().cpu().numpy()
+                log_dict['ce_loss'] = ce_loss.cpu().numpy()
+                log_dict['v_loss'] = v_loss.detach().cpu().numpy()
+                log_dict['s_loss'] = s_loss.detach().cpu().numpy()
+                log_dict['b_loss'] = b_loss.detach().cpu().numpy()
             log_dict['learning_rate'] = scheduler.get_last_lr()[0] if training_args.lr_scheduler_type != 'constant' else training_args.learning_rate
             wandb.log(log_dict, step=gradient_step_idx)
 
@@ -315,12 +338,23 @@ with tqdm(total=training_args.max_steps, leave=False) as progress:
         if gradient_step_idx > 0 and gradient_step_idx % training_args.save_steps == 0:
             if distributed_state.is_main_process:
                 print(f"Saving Model Checkpoint for Step {gradient_step_idx}")
-                model.module.config.save_pretrained(temp_dir)
+                model.module.config.save_pretrained(training_args.output_dir)
                 state_dict = get_peft_state_maybe_zero_3(model.module.named_parameters(), training_args.lora_bias)
                 non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(model.module.named_parameters())
                 model.module.save_pretrained(temp_dir, state_dict=state_dict)
+                # model.module.save_pretrained(training_args.output_dir)
                 torch.save(non_lora_state_dict, os.path.join(temp_dir, 'non_lora_trainables.bin'))
-                merge_lora(model_args.model_path, temp_dir, training_args.output_dir)
+                merge_lora_twinvla(model_args.single_model_path, temp_dir, training_args.output_dir)
+                tokenizer.save_pretrained(training_args.output_dir)
+                other_states = {
+                    'step': gradient_step_idx,
+                    'optim': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict()
+                }
+                torch.save(other_states, f'{training_args.output_dir}/training_states.pth')
+                del other_states
+                if model.module.config.head_args['head_type'] == 'BR':
+                    model.module.si.save_ema(training_args.output_dir)
 
             dist.barrier()
 

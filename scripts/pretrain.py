@@ -26,7 +26,7 @@ from spatialvla.mobilevlm.model.mobilevlm import load_pretrained_vlm_for_vla, lo
 from spatialvla.mobilevlm.train.train import find_all_linear_names, get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3
 from spatialvla_config import ModelArguments, TrainingArguments, HEAD_ARGS
 from mergelora import merge_lora
-from spatialvla.mobilevlm.action_tokenizer import ActionTokenizer
+from spatialvla.mobilevlm.action_tokenizer import ActionTokenizer, FASTTokenizer
 from spatialvla.mobilevlm.conversation import conv_templates, SeparatorStyle
 from spatialvla.mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
 from spatialvla.mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
@@ -34,7 +34,7 @@ from PIL import Image
 
 tf.config.set_visible_devices([], "GPU") ## Ensure dataloader did not access to gpu
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["WANDB_MODE"] = "offline"
+os.environ["WANDB_MODE"] = "online"
 
 distributed_state = PartialState()
 device_id = distributed_state.local_process_index
@@ -77,9 +77,14 @@ model = model.to(device_id)
 print('Pretrained VLM Loaded')
 
 ## Important!
+use_fast = False
 if model.config.head_args['head_type'] == 'BR':
     action_tokenizer = ActionTokenizer(tokenizer)
     model.action_tokenizer = action_tokenizer
+elif model.config.head_args['head_type'] == 'FAST':
+    action_tokenizer = FASTTokenizer(tokenizer)
+    model.action_tokenizer = action_tokenizer
+    use_fast = True
 else:
     action_tokenizer = None
 
@@ -111,7 +116,7 @@ collator = PaddedCollatorForActionPrediction(
     tokenizer.pad_token_id, 
     padding_side='right',
     use_state_input=model_args.use_state_input,
-    use_label=(model.config.head_args['head_type'] == 'BR'),
+    use_label=(model.config.head_args['head_type'] in ['BR', 'FAST']),
     use_hz_input=model_args.use_hz_input
 )
 
@@ -223,10 +228,10 @@ with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
                 attention_mask=batch['attention_mask'].to(device_id),
                 actions=batch['action'].to(device_id),
                 states=batch['proprio'].to(device_id) if model_args.use_state_input else None,
-                labels=batch['labels'] if model.module.config.head_args['head_type'] == 'BR' else None,
+                labels=batch['labels'] if model.module.config.head_args['head_type'] in ['BR', 'FAST'] else None,
                 hz=batch['hz'].to(device_id) if model_args.use_hz_input else None
             )
-            if model.module.config.head_args['head_type'] == 'BR':
+            if model.module.config.head_args['head_type'] in ['BR']:
                 action_logits = loss.logits[:, -51:-1]
                 action_preds = action_logits.argmax(dim=2)
                 action_gt = batch['labels'][:, -50:].to(action_logits.device)
@@ -239,6 +244,18 @@ with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
                 s_loss = loss.loss[3]
                 b_loss = loss.loss[4]
                 loss = loss.loss[0]
+            elif model.module.config.head_args['head_type'] in ['FAST']:
+                valid_mask = batch['labels'][:, :-1] != -100
+                action_gt = batch['labels'][:, 1:].to(valid_mask.device)
+                action_logits = loss.logits[:, -action_gt.shape[-1]-1:-1].to(valid_mask.device)
+                action_preds = action_logits.argmax(dim=2)
+                # print(action_preds.shape, action_gt.shape, valid_mask.shape)
+                correct_preds = (action_preds == action_gt) & valid_mask
+                action_accuracy = correct_preds.sum().float() / valid_mask.sum().float()
+                # pred_tokens = action_preds[valid_mask]
+
+                loss = loss.loss
+
 
         normalized_loss = loss / training_args.gradient_accumulation_steps
         normalized_loss.backward()
@@ -271,23 +288,24 @@ with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
                 log_dict['grad/mean'] = mean_grad
                 log_dict['grad/norm'] = global_norm
 
-            model.eval()
-            with torch.no_grad():
-                with torch.autocast('cuda', dtype=dtype):
-                    start = time.time()
-                    predicted_action = model.module.predict_action(
-                        input_ids=batch['input_ids'].to(device_id),
-                        images=batch['pixel_values'].to(device_id),
-                        attention_mask=batch['attention_mask'].to(device_id),
-                        use_cache=True,
-                        states=batch['proprio'].to(device_id) if model_args.use_state_input else None,
-                        prior_actions=batch['action'].to(device_id),
-                        hz=batch['hz'].to(device_id) if model_args.use_hz_input else None,
-                    )
-                    prediction_time = float(time.time() - start) / training_args.batch_size
-                action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')
-                log_dict['action_loss'] = action_loss.item()
-                log_dict['pred_time'] = prediction_time
+            if model.module.config.head_args['head_type'] != 'FAST':
+                model.eval()
+                with torch.no_grad():
+                    with torch.autocast('cuda', dtype=dtype):
+                        start = time.time()
+                        predicted_action = model.module.predict_action(
+                            input_ids=batch['input_ids'].to(device_id),
+                            images=batch['pixel_values'].to(device_id),
+                            attention_mask=batch['attention_mask'].to(device_id),
+                            use_cache=True,
+                            states=batch['proprio'].to(device_id) if model_args.use_state_input else None,
+                            prior_actions=batch['action'].to(device_id),
+                            hz=batch['hz'].to(device_id) if model_args.use_hz_input else None,
+                        )
+                        prediction_time = float(time.time() - start) / training_args.batch_size
+                    action_loss = nn.functional.mse_loss(batch['action'].to(device_id), predicted_action, reduction='mean')
+                    log_dict['action_loss'] = action_loss.item()
+                    log_dict['pred_time'] = prediction_time
 
         if distributed_state.is_main_process:
             log_dict['loss'] = normalized_loss.item()
@@ -298,6 +316,10 @@ with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
                 log_dict['v_loss'] = v_loss.detach().cpu().numpy()
                 log_dict['s_loss'] = s_loss.detach().cpu().numpy()
                 log_dict['b_loss'] = b_loss.detach().cpu().numpy()
+            elif model.module.config.head_args['head_type'] == 'FAST':
+                log_dict['token_acc'] = action_accuracy
+                log_dict['ce_loss'] = loss.detach().cpu().numpy()
+
             log_dict['learning_rate'] = scheduler.get_last_lr()[0] if training_args.lr_scheduler_type != 'constant' else training_args.learning_rate
             wandb.log(log_dict, step=gradient_step_idx)
 
