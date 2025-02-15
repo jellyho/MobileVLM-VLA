@@ -13,28 +13,28 @@ from spatialvla.mobilevlm.conversation import conv_templates, SeparatorStyle
 from spatialvla.mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
 from spatialvla.mobilevlm.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
 
-
 class VLAModel:
     def __init__(self, model_path, dtype=torch.bfloat16):
         disable_torch_init()
         self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_vla(model_path=model_path, dtype=dtype)
-        # self.tokenizer, self.model, self.image_processor, self.dataset_statistics = load_twinvla_from_singlevla(single_model_path=model_path, dtype=dtype)
         self.dtype = dtype
-        crop_height = int(0.9 * 480)
-        crop_width = int(0.9 * 640)
-        # self.transform = transforms.Compose([
-        #     transforms.CenterCrop((crop_height, crop_width)),  # Crop to 90%
-        #     transforms.Resize((480, 640))  # Resize back to 100%
-        # ])
-        # self.tokenizer, self.model, self.image_processor, _ = load_pretrained_model(model_path)
 
     def unnorm_action(self, unnorm_key, action):
         mask = self.dataset_statistics[unnorm_key]['action']['mask']
-        action = np.where(
-            mask,  # Condition: apply unnormalization where mask is True
-            action * self.dataset_statistics[unnorm_key]['action']['std'] + self.dataset_statistics[unnorm_key]['action']['mean'],  # Unnormalized action
-            action  # Original action where mask is False
-        )
+        if self.model.config.head_args['head_type'] == 'FAST':
+            low = self.dataset_statistics[unnorm_key]['action']['q01']
+            high = self.dataset_statistics[unnorm_key]['action']['q99']
+            action = np.where(
+                mask,  # Condition: apply unnormalization where mask is True
+                (action + 1) * (high - low + 1e-6) / 2 + low,
+                action  # Original action where mask is False
+            )
+        else:
+            action = np.where(
+                mask,  # Condition: apply unnormalization where mask is True
+                action * self.dataset_statistics[unnorm_key]['action']['std'] + self.dataset_statistics[unnorm_key]['action']['mean'],  # Unnormalized action
+                action  # Original action where mask is False
+            )
         return action
 
     def inference_prompt(self, image, prompt, max_new_tokens=100):
@@ -84,7 +84,7 @@ class VLAModel:
         stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
         # Input
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
-        # print(input_ids)
+        
         if self.model.config.head_args['head_type'] == 'BR':
             with torch.inference_mode():
                 action = self.model.predict_action_br(
@@ -92,6 +92,13 @@ class VLAModel:
                     images=images_tensor,
                     num_denoise_steps=5,
                     hz=torch.Tensor(hz).unsqueeze(0)
+                )
+        elif self.model.config.head_args['head_type'] == 'FAST':
+            with torch.inference_mode():
+                action = self.model.predict_action_fast(
+                    input_ids=input_ids,
+                    images=images_tensor,
+                    hz=hz
                 )
         else:
             with torch.inference_mode():
@@ -134,6 +141,7 @@ class TwinVLAModel:
         # Input
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
         stopping_criteria = KeywordsStoppingCriteria([stop_str], self.tokenizer, input_ids)
+
         with torch.inference_mode():
             output_ids = self.model.generate(
                 input_ids,
@@ -175,7 +183,8 @@ class TwinVLAModel:
         stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
         # Input
         input_ids = (tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda())
-        # print(input_ids)
+        stopping_criteria = KeywordsStoppingCriteria(['|'], self.tokenizer, input_ids)
+
         if self.model.config.head_args['head_type'] == 'BR':
             with torch.inference_mode():
                 action = self.model.predict_action_br(

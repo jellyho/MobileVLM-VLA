@@ -108,7 +108,8 @@ dataset = RLDSDataset(
     future_action_window_size=model_args.action_len - 1,
     enable_autotune=training_args.enable_autotune,
     use_state_input=model_args.use_state_input,
-    num_parallel_calls=training_args.num_parallel_calls
+    num_parallel_calls=training_args.num_parallel_calls,
+    quantile_norm = model.config.head_args['head_type'] == 'FAST'
 )
 
 collator = PaddedCollatorForActionPrediction(
@@ -245,16 +246,8 @@ with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
                 b_loss = loss.loss[4]
                 loss = loss.loss[0]
             elif model.module.config.head_args['head_type'] in ['FAST']:
-                valid_mask = batch['labels'][:, :-1] != -100
-                action_gt = batch['labels'][:, 1:].to(valid_mask.device)
-                action_logits = loss.logits[:, -action_gt.shape[-1]-1:-1].to(valid_mask.device)
-                action_preds = action_logits.argmax(dim=2)
-                # print(action_preds.shape, action_gt.shape, valid_mask.shape)
-                correct_preds = (action_preds == action_gt) & valid_mask
-                action_accuracy = correct_preds.sum().float() / valid_mask.sum().float()
-                # pred_tokens = action_preds[valid_mask]
-
-                loss = loss.loss
+                token_acc = loss.loss['token_acc']
+                loss = loss.loss['ce_loss']
 
 
         normalized_loss = loss / training_args.gradient_accumulation_steps
@@ -317,7 +310,7 @@ with tqdm(total=training_args.max_steps, initial=step, leave=False) as progress:
                 log_dict['s_loss'] = s_loss.detach().cpu().numpy()
                 log_dict['b_loss'] = b_loss.detach().cpu().numpy()
             elif model.module.config.head_args['head_type'] == 'FAST':
-                log_dict['token_acc'] = action_accuracy
+                log_dict['token_acc'] = token_acc.cpu().numpy()
                 log_dict['ce_loss'] = loss.detach().cpu().numpy()
 
             log_dict['learning_rate'] = scheduler.get_last_lr()[0] if training_args.lr_scheduler_type != 'constant' else training_args.learning_rate

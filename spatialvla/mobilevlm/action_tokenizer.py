@@ -85,7 +85,8 @@ class FASTTokenizer:
 
     def detokenize(self, tokens, action_dim, action_len):
         action_tokens = self.tokenizer.vocab_size - 1 - tokens
-        action = self.fast_tokenizer.decode([action_tokens], time_horizon=action_len, action_dim=action_dim)[0]
+        action = self.fast_tokenizer.decode(action_tokens, time_horizon=action_len, action_dim=action_dim)
+        return action
 
     @property
     def vocab_size(self) -> int:

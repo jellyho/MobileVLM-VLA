@@ -12,8 +12,19 @@ from spatialvla.mobilevlm.model.action_heads import MLPHead, ContinuousActionHea
 from spatialvla.mobilevlm.model.diffusion_heads import DiffusionActionHead, DiffusionPolicyHead, DiTModules, FlowMatchingActionHead, DiffusionPolicyHead2, FlowMatchingDiffusionPolicyHead, TimestepEmbedder
 from spatialvla.mobilevlm.action_tokenizer import ActionTokenizer
 from spatialvla.mobilevlm.model.bridger.model.stochastic_interpolants import StochasticInterpolants
+from spatialvla.mobilevlm.utils import disable_torch_init, process_images, tokenizer_image_token, KeywordsStoppingCriteria
 
 IGNORE_INDEX = -100
+
+from transformers import StoppingCriteria, StoppingCriteriaList
+
+class StopOnToken(StoppingCriteria):
+    def __init__(self, stop_token_id):
+        self.stop_token_id = stop_token_id
+
+    def __call__(self, input_ids, scores, **kwargs):
+        # Check if last generated token is the stop token
+        return (input_ids[:, -1] == self.stop_token_id).any().item()
 
 class MobileVLMConfig(LlamaConfig):
     model_type = "mobilevlm"
@@ -237,7 +248,7 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
                 shift_labels = shift_labels.view(-1)
                 # Enable model/pipeline parallelism
                 shift_labels = shift_labels.to(shift_logits.device)
-                loss = loss_fct(shift_logits, shift_labels)
+                loss['ce_loss'] = loss_fct(shift_logits, shift_labels)
             else:
                 loss = None
 
@@ -271,14 +282,20 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
             if labels is not None:
                 shift_logits = logits[..., :-1, :].contiguous()
                 shift_labels = labels[..., 1:].contiguous()
-                # print(shift_logits.shape, shift_labels.shape)
                 # Flatten the tokens
                 loss_fct = CrossEntropyLoss(ignore_index=IGNORE_INDEX)
                 shift_logits = shift_logits.view(-1, self.config.vocab_size)
                 shift_labels = shift_labels.view(-1)
                 # Enable model/pipeline parallelism
                 shift_labels = shift_labels.to(shift_logits.device)
-                loss = loss_fct(shift_logits, shift_labels)
+                loss = {}
+                loss['ce_loss'] = loss_fct(shift_logits, shift_labels)
+
+                shift_preds = shift_logits.argmax(dim=-1)
+                valid_mask = shift_labels != IGNORE_INDEX
+                correct_preds = (shift_preds == shift_labels) & valid_mask
+                action_accuracy = correct_preds.sum().float() / valid_mask.sum().float()
+                loss['token_acc'] = action_accuracy.detach()
             else:
                 loss = None  
             return CausalLMOutputWithPast(
@@ -452,25 +469,24 @@ class SpatialVLAForCausalLM(LlamaForCausalLM, MobileVLMMetaForCausalLM):
         input_ids: torch.LongTensor = None,
         images: Optional[torch.FloatTensor] = None,
         states: Optional[torch.Tensor] = None,
-        hzs = None,
-        action_dim = None
+        hz = None,
+        action_dim = 7,
     ):
         # GENERATE Actions with hidden state return, take -1 index hidden state
         with torch.autocast('cuda', dtype=torch.bfloat16):
-            # 1, length
-            input_length = input_ids.shape[1]
+            input_length = input_ids.shape[-1]
             output_ids = self.generate(
                 input_ids,
                 images=images,
-                max_new_tokens=512,
+                max_new_tokens=128,
                 use_cache=True,
                 do_sample=False,
                 num_beams=1,
-                top_p=None,                
+                top_p=None,   
+                stopping_criteria=StoppingCriteriaList([StopOnToken(891)]),  # Add stopping criteria             
             )
-            
-            action_token = output_ids[:, input_length:].cpu()
-            actions = torch.tensor(self.action_tokenizer.detokenize(action_token, hzs, action_dim), device=input_ids.device)
+            action_token = output_ids[:, input_length:-1].cpu()
+            actions = torch.tensor(self.action_tokenizer.detokenize(action_token, action_dim, hz), device=input_ids.device)
         return actions
 
     def prepare_inputs_for_generation(

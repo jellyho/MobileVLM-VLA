@@ -103,10 +103,11 @@ class RLDSBatchTransform:
             hz = None
 
         if self.action_tokenizer is not None:
+            ## For FAST Tokenzier
             action_tokens = torch.Tensor(self.action_tokenizer.discretize(action[:hz, :])).to(dtype=torch.long)
-            # print(action_tokens)
-            token_length = action_tokens.shape[-1]
-            input_ids = torch.cat([input_ids, action_tokens], axis=0)
+            stopping_token = torch.Tensor(self.tokenizer('|', add_special_tokens=False)['input_ids']).to(dtype=torch.long)
+            token_length = action_tokens.shape[-1] + 1
+            input_ids = torch.cat([input_ids, action_tokens, stopping_token], axis=0)
             labels = list(input_ids)
             labels = torch.tensor(labels)
             labels[: -token_length] = IGNORE_INDEX

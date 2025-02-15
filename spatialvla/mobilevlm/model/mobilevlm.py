@@ -7,7 +7,7 @@ from spatialvla.mobilevlm.model.vision_projector import build_vision_projector
 from spatialvla.mobilevlm.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, \
     DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from spatialvla.datasets.rlds.utils.data_utils import load_statistics_from_json
-from spatialvla.mobilevlm.action_tokenizer import ActionTokenizer
+from spatialvla.mobilevlm.action_tokenizer import ActionTokenizer, FASTTokenizer
 
 class MobileVLMMetaModel:
     def __init__(self, config):
@@ -422,5 +422,8 @@ def load_vla(model_path, load_8bit=False, load_4bit=False, device="cuda", dtype=
         action_tokenizer = ActionTokenizer(tokenizer)
         model.action_tokenizer = action_tokenizer
         model.si.load_ema(model_path)
+    elif model.config.head_args['head_type'] == 'FAST':
+        action_tokenizer = FASTTokenizer(tokenizer)
+        model.action_tokenizer = action_tokenizer
 
     return tokenizer, model, image_processor, dataset_statistics
